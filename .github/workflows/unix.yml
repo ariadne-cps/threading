@@ -64,15 +64,15 @@ jobs:
       run: sudo apt install -y cmake ninja-build pkg-config ${{matrix.config.cxx-pkg}}
 
     - name: Create Build Environment
-      run: cmake -E make_directory ${{runner.workspace}}/build
+      run: cmake -E make_directory ${{runner.workspace}}/build -DWARNINGS_AS_ERRORS=ON
 
     - name: Configure CMake
       working-directory: ${{runner.workspace}}/build
-      run: cmake ${{runner.workspace}}/threading -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DCMAKE_CXX_COMPILER=${{matrix.config.cxx-cmd}} -G Ninja
+      run: cmake ${{runner.workspace}}/threading -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DCMAKE_CXX_COMPILER=${{matrix.config.cxx-cmd}} -G Ninja -DWARNINGS_AS_ERRORS=ON
 
     - name: Build
       working-directory: ${{runner.workspace}}/build
-      run: cmake --build . --parallel $($NPROC)
+      run: cmake --build . --parallel $($NPROC) -DWARNINGS_AS_ERRORS=ON
 
     - name: Test
       working-directory: ${{runner.workspace}}/build
