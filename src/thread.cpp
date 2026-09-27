@@ -25,10 +25,10 @@
 #include "logging/logging.hpp"
 #include "threading/thread.hpp"
 
-namespace Threading {
+namespace Ariadne {
 
-using Ariadne::Logging::Logger;
-using Ariadne::Utility::to_string;
+using Ariadne::Logger;
+using Ariadne::to_string;
 
 Thread::Thread(VoidFunction task, String name, bool active)
         : _name(std::move(name)), _got_id_future(_got_id_promise.get_future()), _active(active), _ready_for_task_future(_ready_for_task_promise.get_future()),
@@ -85,4 +85,4 @@ Thread::~Thread() {
     if (active) Logger::instance().unregister_thread(_id);
 }
 
-} // namespace Threading
+} // namespace Ariadne

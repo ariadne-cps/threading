@@ -29,7 +29,7 @@
 #include "utility/test.hpp"
 #include "threading/buffer.hpp"
 
-using namespace Threading;
+using namespace Ariadne;
 
 class TestBuffer {
   public:

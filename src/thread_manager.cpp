@@ -26,9 +26,9 @@
 #include "logging/logging.hpp"
 #include "threading/thread_manager.hpp"
 
-namespace Threading {
+namespace Ariadne {
 
-using Ariadne::Logging::Logger;
+using Ariadne::Logger;
 
 ThreadManager::ThreadManager() : _maximum_concurrency(std::thread::hardware_concurrency()), _concurrency(0), _pool(0) {}
 

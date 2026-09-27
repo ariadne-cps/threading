@@ -32,7 +32,7 @@
 #include <algorithm>
 #include <mutex>
 
-namespace Threading {
+namespace Ariadne {
 
 using std::mutex;
 
@@ -72,6 +72,6 @@ class WorkloadAdvancement {
     mutex mutable _mux;
 };
 
-} // namespace Threading
+} // namespace Ariadne
 
 #endif // THREADING_WORKLOAD_ADVANCEMENT_HPP

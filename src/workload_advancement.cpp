@@ -25,7 +25,7 @@
 #include "utility/macros.hpp"
 #include "threading/workload_advancement.hpp"
 
-namespace Threading {
+namespace Ariadne {
 
 using std::lock_guard;
 
@@ -82,4 +82,4 @@ bool WorkloadAdvancement::has_finished() const {
     return _num_processing == 0 and _num_waiting == 0;
 }
 
-} // namespace Threading
+} // namespace Ariadne

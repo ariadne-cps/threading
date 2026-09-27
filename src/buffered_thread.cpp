@@ -26,10 +26,10 @@
 #include "threading/buffered_thread.hpp"
 #include "threading/using.hpp"
 
-namespace Threading {
+namespace Ariadne {
 
-using Ariadne::Logging::Logger;
-using Ariadne::Utility::to_string;
+using Ariadne::Logger;
+using Ariadne::to_string;
 
 BufferedThread::BufferedThread(String name)
         : _name(name), _task_buffer(1), _got_id_future(_got_id_promise.get_future())
@@ -75,4 +75,4 @@ BufferedThread::~BufferedThread() {
     Logger::instance().unregister_thread(this->id());
 }
 
-} // namespace Threading
+} // namespace Ariadne

@@ -33,9 +33,9 @@
 #include "utility/container.hpp"
 #include "threading/using.hpp"
 
-namespace Threading {
+namespace Ariadne {
 
-using Ariadne::Utility::List;
+using Ariadne::List;
 
 //! \brief Interface for a workload expressed as a stack of elements to work on, supplied with a function to process them
 //! \details E: stack element type

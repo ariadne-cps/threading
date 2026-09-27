@@ -24,7 +24,7 @@
 
 #include "threading/thread_pool.hpp"
 
-namespace Threading {
+namespace Ariadne {
 
 String construct_thread_name(String prefix, size_t number, size_t max_number) {
     std::ostringstream ss;
