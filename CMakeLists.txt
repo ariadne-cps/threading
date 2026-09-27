@@ -47,20 +47,51 @@ include_directories(${PROJECT_SOURCE_DIR}/submodules/utility/include)
 
 if(NOT TARGET threading)
     add_subdirectory(src)
-
-    add_library(threading ${LIBRARY_KIND} $<TARGET_OBJECTS:THREADING_SRC>)
-    set_target_properties(threading PROPERTIES OUTPUT_NAME "ariadne-threading")
-
     add_subdirectory(submodules)
-    target_link_libraries(threading logging utility Threads::Threads)
+
+    add_library(threading INTERFACE)
+    target_include_directories(threading INTERFACE
+        $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/submodules/logging/include>
+        $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/submodules/utility/include>
+        $<INSTALL_INTERFACE:include/ariadne-threading>
+    )
+    target_link_libraries(threading INTERFACE logging utility Threads::Threads)
+endif()
+
+if(CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
+    add_library(ariadne-threading SHARED
+        $<TARGET_OBJECTS:THREADING_SRC>
+        $<TARGET_OBJECTS:LOGGING_SRC>
+        $<TARGET_OBJECTS:UTILITY_SRC>
+    )
+    target_link_libraries(ariadne-threading PUBLIC threading)
 
     setup_standalone_project_tests(
-        TARGET threading
+        TARGET ariadne-threading
         TEST_DIRECTORY test
         TEST_TARGET tests
         SOURCES
             "${PROJECT_SOURCE_DIR}/include"
             "${PROJECT_SOURCE_DIR}/src"
+            "${PROJECT_SOURCE_DIR}/submodules/logging/include"
+            "${PROJECT_SOURCE_DIR}/submodules/logging/src"
+            "${PROJECT_SOURCE_DIR}/submodules/utility/include"
+            "${PROJECT_SOURCE_DIR}/submodules/utility/src"
     )
 
+    install(TARGETS ariadne-threading
+        LIBRARY DESTINATION lib
+        ARCHIVE DESTINATION lib
+        RUNTIME DESTINATION bin
+    )
+    install(DIRECTORY "${PROJECT_SOURCE_DIR}/include/threading"
+        DESTINATION include/ariadne-threading
+    )
+    install(DIRECTORY "${PROJECT_SOURCE_DIR}/submodules/logging/include/logging"
+        DESTINATION include/ariadne-threading
+    )
+    install(DIRECTORY "${PROJECT_SOURCE_DIR}/submodules/utility/include/utility"
+        DESTINATION include/ariadne-threading
+    )
 endif()
