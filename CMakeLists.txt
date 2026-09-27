@@ -59,29 +59,20 @@ if(NOT TARGET threading)
     target_link_libraries(threading INTERFACE logging utility Threads::Threads)
 endif()
 
+setup_project_library(
+    TARGET ariadne-threading
+    OBJECTS
+        THREADING_SRC
+        LOGGING_SRC
+        UTILITY_SRC
+    LINK_LIBRARIES threading
+)
+
+setup_project_tests(
+    EXCLUDE_REGEX "*/submodules/*"
+)
+
 if(CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
-    add_library(ariadne-threading SHARED
-        $<TARGET_OBJECTS:THREADING_SRC>
-        $<TARGET_OBJECTS:LOGGING_SRC>
-        $<TARGET_OBJECTS:UTILITY_SRC>
-    )
-    target_link_libraries(ariadne-threading PUBLIC threading)
-
-    setup_standalone_project_tests(
-        TARGET ariadne-threading
-        TEST_DIRECTORY test
-        TEST_TARGET tests
-        SOURCES
-            "${PROJECT_SOURCE_DIR}/include"
-            "${PROJECT_SOURCE_DIR}/src"
-        EXCLUDE_REGEX "*/submodules/*"
-    )
-
-    install(TARGETS ariadne-threading
-        LIBRARY DESTINATION lib
-        ARCHIVE DESTINATION lib
-        RUNTIME DESTINATION bin
-    )
     install(DIRECTORY "${PROJECT_SOURCE_DIR}/include/threading"
         DESTINATION include/ariadne-threading
     )
