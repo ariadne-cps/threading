@@ -28,10 +28,10 @@
 #include "logging/thread_registry_interface.hpp"
 #include "threading/buffered_thread.hpp"
 
-using namespace Threading;
+using namespace Ariadne;
 using namespace Ariadne::Utility;
 
-class ThreadRegistry : public Ariadne::Logging::ThreadRegistryInterface {
+class ThreadRegistry : public Ariadne::ThreadRegistryInterface {
 public:
     ThreadRegistry() : _threads_registered(0) { }
     bool has_threads_registered() const override { return _threads_registered > 0; }
@@ -167,7 +167,7 @@ class TestBufferedThread {
 
 int main() {
     ThreadRegistry registry;
-    Ariadne::Logging::Logger::instance().attach_thread_registry(&registry);
+    Ariadne::Logger::instance().attach_thread_registry(&registry);
     TestBufferedThread().test();
     return ARIADNE_TEST_FAILURES;
 }

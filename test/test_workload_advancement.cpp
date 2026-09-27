@@ -27,7 +27,7 @@
 #include "utility/test.hpp"
 #include "threading/workload_advancement.hpp"
 
-using namespace Threading;
+using namespace Ariadne;
 
 class TestWorkloadAdvancement {
   public:

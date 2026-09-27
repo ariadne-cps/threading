@@ -27,7 +27,7 @@
 #include "utility/container.hpp"
 #include "threading/workload.hpp"
 
-using namespace Threading;
+using namespace Ariadne;
 using namespace Ariadne::Utility;
 
 template<class T> class SynchronisedList : public List<T> {

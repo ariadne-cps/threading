@@ -28,11 +28,11 @@
 #include "logging/thread_registry_interface.hpp"
 #include "threading/thread_pool.hpp"
 
-using namespace Threading;
+using namespace Ariadne;
 
 using namespace std::chrono_literals;
 
-class ThreadRegistry : public Ariadne::Logging::ThreadRegistryInterface {
+class ThreadRegistry : public Ariadne::ThreadRegistryInterface {
 public:
     ThreadRegistry() : _threads_registered(0) { }
     bool has_threads_registered() const override { return _threads_registered > 0; }
@@ -290,7 +290,7 @@ class TestSmartThreadPool {
 
 int main() {
     ThreadRegistry registry;
-    Ariadne::Logging::Logger::instance().attach_thread_registry(&registry);
+    Ariadne::Logger::instance().attach_thread_registry(&registry);
     TestSmartThreadPool().test();
     return ARIADNE_TEST_FAILURES;
 }

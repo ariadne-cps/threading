@@ -27,7 +27,7 @@
 #include "utility/test.hpp"
 #include "threading/thread_manager.hpp"
 
-using namespace Threading;
+using namespace Ariadne;
 using namespace std::chrono_literals;
 
 class TestThreadManager {
