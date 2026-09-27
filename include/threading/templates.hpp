@@ -29,14 +29,6 @@
 #ifndef THREADING_TEMPLATES_HPP
 #define THREADING_TEMPLATES_HPP
 
-#include <type_traits>
-
-namespace Ariadne {
-
-template<class SIG> struct ResultOfTrait;
-template<class F, class... AS> struct ResultOfTrait<F(AS...)> { typedef typename std::invoke_result<F,AS...>::type Type; };
-template<class SIG> using ResultOf = typename ResultOfTrait<SIG>::Type;
-
-} // namespace Ariadne
+#include "utility/metaprogramming.hpp"
 
 #endif // THREADING_TEMPLATES_HPP
