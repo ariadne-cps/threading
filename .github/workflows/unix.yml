@@ -64,7 +64,7 @@ jobs:
       run: sudo apt install -y cmake ninja-build pkg-config ${{matrix.config.cxx-pkg}}
 
     - name: Create Build Environment
-      run: cmake -E make_directory ${{runner.workspace}}/build -DWARNINGS_AS_ERRORS=ON
+      run: cmake -E make_directory ${{runner.workspace}}/build
 
     - name: Configure CMake
       working-directory: ${{runner.workspace}}/build
@@ -72,7 +72,7 @@ jobs:
 
     - name: Build
       working-directory: ${{runner.workspace}}/build
-      run: cmake --build . --parallel $($NPROC) -DWARNINGS_AS_ERRORS=ON
+      run: cmake --build . --parallel $($NPROC)
 
     - name: Test
       working-directory: ${{runner.workspace}}/build
