@@ -36,10 +36,10 @@
 #include "threading/thread_pool.hpp"
 #include "threading/templates.hpp"
 
-namespace Threading {
+namespace Ariadne {
 
-using Ariadne::Logging::ThreadRegistryInterface;
-using Ariadne::Logging::Logger;
+using Ariadne::ThreadRegistryInterface;
+using Ariadne::Logger;
 
 //! \brief Manages threads based on concurrency availability.
 class ThreadManager : public ThreadRegistryInterface {
@@ -104,6 +104,6 @@ template<class F, class... AS> auto ThreadManager::enqueue(F &&f, AS &&... args)
     return _pool.enqueue(std::forward<F>(f),std::forward<AS>(args)...);
 }
 
-} // namespace Threading
+} // namespace Ariadne
 
 #endif // THREADING_THREAD_MANAGER_HPP

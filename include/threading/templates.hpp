@@ -31,12 +31,12 @@
 
 #include <type_traits>
 
-namespace Threading {
+namespace Ariadne {
 
 template<class SIG> struct ResultOfTrait;
 template<class F, class... AS> struct ResultOfTrait<F(AS...)> { typedef typename std::invoke_result<F,AS...>::type Type; };
 template<class SIG> using ResultOf = typename ResultOfTrait<SIG>::Type;
 
-} // namespace Threading
+} // namespace Ariadne
 
 #endif // THREADING_TEMPLATES_HPP

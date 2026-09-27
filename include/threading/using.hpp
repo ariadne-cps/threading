@@ -35,7 +35,7 @@
 #include <future>
 #include <thread>
 
-namespace Threading {
+namespace Ariadne {
 
 using std::future;
 using std::promise;
@@ -47,6 +47,6 @@ using std::mutex;
 using std::shared_ptr;
 using std::thread;
 
-} // namespace Threading
+} // namespace Ariadne
 
 #endif // THREADING_USING_HPP

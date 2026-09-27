@@ -36,7 +36,7 @@
 #include "utility/macros.hpp"
 #include "threading/using.hpp"
 
-namespace Threading {
+namespace Ariadne {
 
 //! \brief Exception useful when the buffer is allowed to stay in the receiving condition
 class BufferInterruptPullingException : public std::exception { };
@@ -110,6 +110,6 @@ private:
     bool _interrupt;
 };
 
-} // namespace Threading
+} // namespace Ariadne
 
 #endif // THREADING_BUFFER_HPP

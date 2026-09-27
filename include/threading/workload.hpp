@@ -38,14 +38,14 @@
 #include "threading/thread_manager.hpp"
 #include "threading/workload_advancement.hpp"
 
-namespace Threading {
+namespace Ariadne {
 
-using Ariadne::Logging::ProgressIndicator;
-using Ariadne::Logging::LogScopeManager;
-using Ariadne::Logging::Logger;
+using Ariadne::ProgressIndicator;
+using Ariadne::LogScopeManager;
+using Ariadne::Logger;
 
-using Ariadne::Utility::List;
-using Ariadne::Utility::make_lpair;
+using Ariadne::List;
+using Ariadne::make_lpair;
 
 using std::mutex;
 using std::unique_lock;

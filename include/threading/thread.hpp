@@ -38,7 +38,7 @@
 #include "utility/macros.hpp"
 #include "utility/string.hpp"
 
-namespace Threading {
+namespace Ariadne {
 
 using std::exception_ptr;
 using std::thread;
@@ -46,7 +46,7 @@ using std::promise;
 using std::future;
 
 using VoidFunction = std::function<void(void)>;
-using Ariadne::Utility::String;
+using Ariadne::String;
 
 //! \brief A class for handling a thread for a pool in a smarter way.
 //! \details It allows to wait for the start of the \a task before extracting the thread id, which is held along with
@@ -89,6 +89,6 @@ class Thread {
     mutable std::mutex _exception_mutex;
 };
 
-} // namespace Threading
+} // namespace Ariadne
 
 #endif // THREADING_THREAD_HPP

@@ -40,9 +40,9 @@
 #include "threading/buffer.hpp"
 #include "threading/using.hpp"
 
-namespace Threading {
+namespace Ariadne {
 
-using Ariadne::Utility::String;
+using Ariadne::String;
 
 //! \brief A class for handling a thread that accepts multiple tasks to be enqueued.
 //! \details It allows to wait for the start of the \a task before extracting the thread id, which is held along with
@@ -95,6 +95,6 @@ template<class F, class... AS> auto BufferedThread::enqueue(F&& f, AS&&... args)
     return result;
 }
 
-} // namespace Threading
+} // namespace Ariadne
 
 #endif // THREADING_BUFFERED_THREAD_HPP

@@ -36,10 +36,10 @@
 #include "threading/templates.hpp"
 #include "threading/using.hpp"
 
-namespace Threading {
+namespace Ariadne {
 
 using std::make_shared;
-using Ariadne::Utility::List;
+using Ariadne::List;
 
 const String THREAD_POOL_DEFAULT_NAME = "thr";
 
