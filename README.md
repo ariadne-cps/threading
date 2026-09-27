@@ -27,7 +27,7 @@ git clone --recurse-submodules https://github.com/ariadne-cps/threading.git
 cd threading
 mkdir build
 cd build
-cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake .. -DCMAKE_BUILD_TYPE=Release
 cmake --build . --parallel
 ctest --output-on-failure
 ```
@@ -39,7 +39,7 @@ A C++20 compiler, CMake and pthread support are required.
 Configure a Debug build with coverage enabled:
 
 ```bash
-cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCOVERAGE=ON
+cmake .. -DCMAKE_BUILD_TYPE=Debug -DCOVERAGE=ON
 cmake --build . --parallel --target coverage
 ```
 
@@ -50,7 +50,7 @@ On Ubuntu the report is generated with GCC/lcov. On macOS it is generated with A
 For race detection, use a separate build configured with:
 
 ```bash
-cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Debug -DTHREAD_SANITIZER=ON
+cmake .. -DCMAKE_BUILD_TYPE=Debug -DTHREAD_SANITIZER=ON
 cmake --build . --parallel
 ctest --output-on-failure
 ```
