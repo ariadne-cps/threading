@@ -74,10 +74,7 @@ if(CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
         SOURCES
             "${PROJECT_SOURCE_DIR}/include"
             "${PROJECT_SOURCE_DIR}/src"
-            "${PROJECT_SOURCE_DIR}/submodules/logging/include"
-            "${PROJECT_SOURCE_DIR}/submodules/logging/src"
-            "${PROJECT_SOURCE_DIR}/submodules/utility/include"
-            "${PROJECT_SOURCE_DIR}/submodules/utility/src"
+        EXCLUDE_REGEX "*/submodules/*"
     )
 
     install(TARGETS ariadne-threading
