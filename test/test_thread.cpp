@@ -31,7 +31,6 @@
 #include "threading/using.hpp"
 
 using namespace Ariadne;
-using namespace Ariadne::Utility;
 
 using namespace std::chrono_literals;
 

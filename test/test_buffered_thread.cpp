@@ -29,7 +29,6 @@
 #include "threading/buffered_thread.hpp"
 
 using namespace Ariadne;
-using namespace Ariadne::Utility;
 
 class ThreadRegistry : public Ariadne::ThreadRegistryInterface {
 public:
