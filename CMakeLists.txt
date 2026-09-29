@@ -64,7 +64,14 @@ setup_project_library(
     LINK_LIBRARIES threading
 )
 
-setup_project_tests()
+setup_standalone_project_tests(
+    TARGET ariadne-threading
+    TEST_DIRECTORY tests
+    TEST_TARGET tests
+    SOURCES
+        "${PROJECT_SOURCE_DIR}/include"
+        "${PROJECT_SOURCE_DIR}/src"
+)
 
 if(CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
     get_target_property(LOGGING_SOURCE_DIR logging SOURCE_DIR)
