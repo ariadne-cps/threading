@@ -41,22 +41,18 @@ endif()
 
 find_package(Threads REQUIRED)
 
-include_directories(${PROJECT_SOURCE_DIR}/include)
-include_directories(${PROJECT_SOURCE_DIR}/submodules/logging/include)
-include_directories(${PROJECT_SOURCE_DIR}/submodules/utility/include)
-
 if(NOT TARGET threading)
-    add_subdirectory(src)
     add_subdirectory(submodules)
 
     add_library(threading INTERFACE)
     target_include_directories(threading INTERFACE
         $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
-        $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/submodules/logging/include>
-        $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/submodules/utility/include>
         $<INSTALL_INTERFACE:include/ariadne-threading>
     )
     target_link_libraries(threading INTERFACE logging utility Threads::Threads)
+
+    add_subdirectory(src)
+    target_link_libraries(THREADING_SRC PRIVATE threading)
 endif()
 
 setup_project_library(
@@ -73,13 +69,16 @@ setup_project_tests(
 )
 
 if(CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
+    get_target_property(LOGGING_SOURCE_DIR logging SOURCE_DIR)
+    get_target_property(UTILITY_SOURCE_DIR utility SOURCE_DIR)
+
     install(DIRECTORY "${PROJECT_SOURCE_DIR}/include/threading"
         DESTINATION include/ariadne-threading
     )
-    install(DIRECTORY "${PROJECT_SOURCE_DIR}/submodules/logging/include/logging"
+    install(DIRECTORY "${LOGGING_SOURCE_DIR}/include/logging"
         DESTINATION include/ariadne-threading
     )
-    install(DIRECTORY "${PROJECT_SOURCE_DIR}/submodules/utility/include/utility"
+    install(DIRECTORY "${UTILITY_SOURCE_DIR}/include/utility"
         DESTINATION include/ariadne-threading
     )
 endif()
