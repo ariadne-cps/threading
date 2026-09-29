@@ -64,9 +64,7 @@ setup_project_library(
     LINK_LIBRARIES threading
 )
 
-setup_project_tests(
-    EXCLUDE_REGEX "*/submodules/*"
-)
+setup_project_tests()
 
 if(CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
     get_target_property(LOGGING_SOURCE_DIR logging SOURCE_DIR)
