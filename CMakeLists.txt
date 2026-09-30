@@ -35,7 +35,7 @@ if(EXISTS "${PROJECT_SOURCE_DIR}/.git")
         REFERENCES
             "${PROJECT_SOURCE_DIR}|submodules/configuration"
             "${PROJECT_SOURCE_DIR}/submodules/logging|submodules/configuration"
-            "${PROJECT_SOURCE_DIR}/submodules/utility|submodules/configuration"
+            "${PROJECT_SOURCE_DIR}/submodules/logging/submodules/utility|submodules/configuration"
     )
 endif()
 
