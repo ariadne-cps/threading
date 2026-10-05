@@ -8,6 +8,3 @@ add_library(${LIBRARY_NAME} OBJECT
         thread_manager.cpp
         )
 
-foreach(WARN ${LIBRARY_EXCLUSIVE_WARN})
-    target_compile_options(${LIBRARY_NAME} PUBLIC -W${WARN})
-endforeach()
