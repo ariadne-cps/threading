@@ -62,10 +62,7 @@ ariadne_register_public_headers(
 
 setup_project_library(
     TARGET ariadne-threading
-    OBJECTS
-        THREADING_SRC
-        LOGGING_SRC
-        UTILITY_SRC
+    OBJECTS THREADING_SRC
     LINK_LIBRARIES threading
 )
 
