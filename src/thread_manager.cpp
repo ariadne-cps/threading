@@ -30,7 +30,7 @@ namespace Ariadne {
 
 using Ariadne::Logger;
 
-ThreadManager::ThreadManager() : _maximum_concurrency(std::thread::hardware_concurrency()), _concurrency(0), _pool(0) {}
+ThreadManager::ThreadManager() : _maximum_concurrency(std::thread::hardware_concurrency()), _concurrency(0), _threads_registered(false), _pool(0) {}
 
 ThreadManager& ThreadManager::instance() {
     auto& logger = Logger::instance();
@@ -41,7 +41,7 @@ ThreadManager& ThreadManager::instance() {
 }
 
 bool ThreadManager::has_threads_registered() const {
-    return _pool.num_threads() > 0;
+    return _threads_registered.load();
 }
 
 size_t ThreadManager::maximum_concurrency() const {
@@ -56,12 +56,15 @@ void ThreadManager::set_concurrency(size_t value) {
     ARIADNE_PRECONDITION(value <= _maximum_concurrency);
     lock_guard<mutex> lock(_concurrency_change_mutex);
     auto previous = _concurrency.exchange(value);
+    _threads_registered = (previous != 0 or value != 0);
     try {
         _pool.set_num_threads(value);
     } catch (...) {
         _concurrency = previous;
+        _threads_registered = (previous != 0);
         throw;
     }
+    _threads_registered = (value != 0);
 }
 
 void ThreadManager::set_maximum_concurrency() {

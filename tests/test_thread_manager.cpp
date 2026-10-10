@@ -97,6 +97,31 @@ class TestThreadManager {
     }
 
 
+    void test_thread_registry_during_shrink_to_zero() {
+        if (ThreadManager::instance().maximum_concurrency() == 0) return;
+        ThreadManager::instance().set_concurrency(1);
+        std::atomic<bool> task_started = false;
+        std::atomic<bool> allow_finish = false;
+
+        auto future = ThreadManager::instance().enqueue(VoidFunction([&] {
+            task_started = true;
+            while (not allow_finish.load()) std::this_thread::yield();
+        }));
+        while (not task_started.load()) std::this_thread::yield();
+
+        auto shrink = std::async(std::launch::async,[] {
+            ThreadManager::instance().set_concurrency(0);
+        });
+        while (ThreadManager::instance().concurrency() != 0) std::this_thread::yield();
+
+        ARIADNE_TEST_ASSERT(ThreadManager::instance().has_threads_registered())
+        allow_finish = true;
+        future.get();
+        shrink.get();
+        ARIADNE_TEST_ASSERT(not ThreadManager::instance().has_threads_registered())
+    }
+
+
     void test_worker_cannot_shrink_manager() {
         if (ThreadManager::instance().maximum_concurrency() == 0) return;
         ThreadManager::instance().set_concurrency(1);

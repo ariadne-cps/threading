@@ -88,6 +88,7 @@ class ThreadManager : public ThreadRegistryInterface {
   private:
     const size_t _maximum_concurrency;
     std::atomic<size_t> _concurrency;
+    std::atomic<bool> _threads_registered;
     mutable mutex _concurrency_change_mutex;
 
     ThreadPool _pool;
