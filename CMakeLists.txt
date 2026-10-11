@@ -4,13 +4,13 @@ project(Threading VERSION 1.0)
 
 option(WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
 
-if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/submodules/configuration/cmake/ProjectOptions.cmake")
+if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/ss/configuration/cmake/ProjectOptions.cmake")
     message(FATAL_ERROR
         "Git submodules are not initialized. "
         "Run 'git submodule update --init --recursive' before configuring the project.")
 endif()
 
-include("${CMAKE_CURRENT_SOURCE_DIR}/submodules/configuration/cmake/ProjectOptions.cmake")
+include("${CMAKE_CURRENT_SOURCE_DIR}/ss/configuration/cmake/ProjectOptions.cmake")
 
 require_initialized_submodules()
 
@@ -33,23 +33,23 @@ endif()
 if(EXISTS "${PROJECT_SOURCE_DIR}/.git")
     require_same_dependency_commit(Configuration
         REFERENCES
-            "${PROJECT_SOURCE_DIR}|submodules/configuration"
-            "${PROJECT_SOURCE_DIR}/submodules/utility|submodules/configuration"
-            "${PROJECT_SOURCE_DIR}/submodules/utility/submodules/macro|submodules/configuration"
-            "${PROJECT_SOURCE_DIR}/submodules/logging|submodules/configuration"
-            "${PROJECT_SOURCE_DIR}/submodules/logging/submodules/macro|submodules/configuration"
+            "${PROJECT_SOURCE_DIR}|ss/configuration"
+            "${PROJECT_SOURCE_DIR}/ss/utility|ss/configuration"
+            "${PROJECT_SOURCE_DIR}/ss/utility/ss/macro|ss/configuration"
+            "${PROJECT_SOURCE_DIR}/ss/logging|ss/configuration"
+            "${PROJECT_SOURCE_DIR}/ss/logging/ss/macro|ss/configuration"
     )
     require_same_dependency_commit(Macro
         REFERENCES
-            "${PROJECT_SOURCE_DIR}/submodules/utility|submodules/macro"
-            "${PROJECT_SOURCE_DIR}/submodules/logging|submodules/macro"
+            "${PROJECT_SOURCE_DIR}/ss/utility|ss/macro"
+            "${PROJECT_SOURCE_DIR}/ss/logging|ss/macro"
     )
 endif()
 
 find_package(Threads REQUIRED)
 
 if(NOT TARGET threading)
-    add_subdirectory(submodules)
+    add_subdirectory(ss)
 
     add_library(threading INTERFACE)
     target_include_directories(threading INTERFACE
