@@ -26,7 +26,7 @@
 #include <vector>
 #include <atomic>
 #include <limits>
-#include "utility/test.hpp"
+#include "macro/testing.hpp"
 #include "threading/buffer.hpp"
 
 using namespace Ariadne;

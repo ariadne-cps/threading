@@ -33,7 +33,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <queue>
-#include "utility/macros.hpp"
+#include "macro/general.hpp"
 #include "threading/using.hpp"
 
 namespace Ariadne {

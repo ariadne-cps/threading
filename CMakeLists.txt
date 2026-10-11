@@ -34,8 +34,15 @@ if(EXISTS "${PROJECT_SOURCE_DIR}/.git")
     require_same_dependency_commit(Configuration
         REFERENCES
             "${PROJECT_SOURCE_DIR}|submodules/configuration"
+            "${PROJECT_SOURCE_DIR}/submodules/utility|submodules/configuration"
+            "${PROJECT_SOURCE_DIR}/submodules/utility/submodules/macro|submodules/configuration"
             "${PROJECT_SOURCE_DIR}/submodules/logging|submodules/configuration"
-            "${PROJECT_SOURCE_DIR}/submodules/logging/submodules/utility|submodules/configuration"
+            "${PROJECT_SOURCE_DIR}/submodules/logging/submodules/macro|submodules/configuration"
+    )
+    require_same_dependency_commit(Macro
+        REFERENCES
+            "${PROJECT_SOURCE_DIR}/submodules/utility|submodules/macro"
+            "${PROJECT_SOURCE_DIR}/submodules/logging|submodules/macro"
     )
 endif()
 

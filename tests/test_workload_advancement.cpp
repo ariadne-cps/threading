@@ -24,7 +24,7 @@
 
 #include <thread>
 #include <vector>
-#include "utility/test.hpp"
+#include "macro/testing.hpp"
 #include "threading/workload_advancement.hpp"
 
 using namespace Ariadne;

@@ -24,7 +24,7 @@
 
 #include <chrono>
 #include <thread>
-#include "utility/test.hpp"
+#include "macro/testing.hpp"
 #include "threading/thread_manager.hpp"
 
 using namespace Ariadne;

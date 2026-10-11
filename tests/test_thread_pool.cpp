@@ -23,7 +23,7 @@
  */
 
 #include <chrono>
-#include "utility/test.hpp"
+#include "macro/testing.hpp"
 #include "logging/logging.hpp"
 #include "logging/thread_registry_interface.hpp"
 #include "threading/thread_pool.hpp"
