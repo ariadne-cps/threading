@@ -34,9 +34,9 @@ endif()
 
 find_package(Threads REQUIRED)
 
-if(NOT TARGET threading)
-    add_subdirectory(ss)
+add_subdirectory(ss)
 
+if(NOT TARGET threading)
     add_library(threading INTERFACE)
     target_include_directories(threading INTERFACE
         $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
