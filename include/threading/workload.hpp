@@ -158,8 +158,8 @@ class WorkloadCore {
         {
             lock_guard<mutex> lock(_element_availability_mutex);
             _advancement.add_to_completed();
+            _element_availability_condition.notify_one();
         }
-        _element_availability_condition.notify_one();
     }
 
     void _print_hold() {
