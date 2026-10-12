@@ -14,21 +14,7 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/ss/configuration/cmake/ProjectOptions.cmake
 
 require_initialized_submodules()
 
-option(THREAD_SANITIZER "Enable ThreadSanitizer" OFF)
-
 setup_project()
-
-if(COVERAGE AND THREAD_SANITIZER)
-    message(FATAL_ERROR "COVERAGE and THREAD_SANITIZER cannot be enabled together.")
-endif()
-
-if(THREAD_SANITIZER)
-    if(WIN32 OR NOT CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
-        message(FATAL_ERROR "ThreadSanitizer requires GCC or Clang on Unix-like systems.")
-    endif()
-    add_compile_options(-fsanitize=thread -fno-omit-frame-pointer)
-    add_link_options(-fsanitize=thread)
-endif()
 
 if(EXISTS "${PROJECT_SOURCE_DIR}/.git")
     require_same_dependency_commit(Configuration
