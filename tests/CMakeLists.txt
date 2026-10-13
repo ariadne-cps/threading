@@ -1,6 +1,7 @@
 set(UNIT_TESTS
     test_buffer
     test_buffered_thread
+    test_command_line
     test_thread
     test_thread_pool
     test_thread_manager

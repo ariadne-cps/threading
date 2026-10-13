@@ -20,15 +20,9 @@ if(EXISTS "${PROJECT_SOURCE_DIR}/.git")
     require_same_dependency_commit(Configuration
         REFERENCES
             "${PROJECT_SOURCE_DIR}|ss/configuration"
-            "${PROJECT_SOURCE_DIR}/ss/utility|ss/configuration"
-            "${PROJECT_SOURCE_DIR}/ss/utility/ss/macro|ss/configuration"
             "${PROJECT_SOURCE_DIR}/ss/logging|ss/configuration"
-            "${PROJECT_SOURCE_DIR}/ss/logging/ss/macro|ss/configuration"
-    )
-    require_same_dependency_commit(Macro
-        REFERENCES
-            "${PROJECT_SOURCE_DIR}/ss/utility|ss/macro"
-            "${PROJECT_SOURCE_DIR}/ss/logging|ss/macro"
+            "${PROJECT_SOURCE_DIR}/ss/logging/ss/utility|ss/configuration"
+            "${PROJECT_SOURCE_DIR}/ss/logging/ss/utility/ss/macro|ss/configuration"
     )
 endif()
 
@@ -42,7 +36,7 @@ if(NOT TARGET threading)
         $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include/ariadne-threading>
     )
-    target_link_libraries(threading INTERFACE logging utility Threads::Threads)
+    target_link_libraries(threading INTERFACE logging Threads::Threads)
 
     add_subdirectory(src)
     target_link_libraries(THREADING_SRC PRIVATE threading)
