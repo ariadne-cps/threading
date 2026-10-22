@@ -66,7 +66,7 @@ class TestBufferedThread {
 
     void test_exception() const {
         BufferedThread thread;
-        auto future = thread.enqueue([] { throw new std::exception(); });
+        auto future = thread.enqueue([] { throw std::exception(); });
         ARIADNE_TEST_FAIL(future.get());
     }
 

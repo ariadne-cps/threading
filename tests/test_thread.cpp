@@ -67,7 +67,7 @@ class TestThread {
     }
 
     void test_exception() const {
-        Thread thread([] { throw new std::exception(); });
+        Thread thread([] { throw std::exception(); });
         std::this_thread::sleep_for(10ms);
         ARIADNE_TEST_ASSERT(thread.exception() != nullptr)
     }

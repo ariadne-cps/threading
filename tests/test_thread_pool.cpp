@@ -82,7 +82,7 @@ class TestSmartThreadPool {
 
     void test_exception() {
         ThreadPool pool(1);
-        auto future = pool.enqueue([]{ throw new std::exception(); });
+        auto future = pool.enqueue([]{ throw std::exception(); });
         ARIADNE_TEST_FAIL(future.get());
     }
 

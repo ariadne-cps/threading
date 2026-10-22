@@ -62,12 +62,12 @@ void progress_acknowledge(int const& val, std::shared_ptr<ProgressIndicator> ind
 }
 
 void throw_exception_immediately(DynamicWorkloadType::Access&, int const&, std::shared_ptr<SynchronisedList<int>>) {
-    throw new std::exception();
+    throw std::exception();
 }
 
 void throw_exception_later(DynamicWorkloadType::Access& wla, int const& val, std::shared_ptr<SynchronisedList<int>>) {
     int next_val = val+1;
-    if (next_val > 4) throw new std::exception();
+    if (next_val > 4) throw std::exception();
     else wla.append(next_val);
 }
 
