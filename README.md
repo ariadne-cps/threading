@@ -3,6 +3,7 @@
 [![License: GPL v3](https://img.shields.io/badge/License-GPL%20v3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Unix](https://github.com/ariadne-cps/threading/actions/workflows/unix.yml/badge.svg)](https://github.com/ariadne-cps/threading/actions/workflows/unix.yml)
 [![Windows](https://github.com/ariadne-cps/threading/actions/workflows/win.yml/badge.svg)](https://github.com/ariadne-cps/threading/actions/workflows/win.yml)
+[![Sanitizers](https://github.com/ariadne-cps/threading/actions/workflows/sanitizers.yml/badge.svg)](https://github.com/ariadne-cps/threading/actions/workflows/sanitizers.yml)
 [![Coverage](https://github.com/ariadne-cps/threading/actions/workflows/coverage.yml/badge.svg)](https://github.com/ariadne-cps/threading/actions/workflows/coverage.yml)
 [![codecov](https://codecov.io/gh/ariadne-cps/threading/branch/main/graph/badge.svg)](https://codecov.io/gh/ariadne-cps/threading)
 
@@ -25,37 +26,48 @@ Clone with submodules:
 ```bash
 git clone --recurse-submodules https://github.com/ariadne-cps/threading.git
 cd threading
-mkdir build
-cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release
-cmake --build . --parallel
-ctest --output-on-failure
+cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release
+cmake --build build-release --parallel --target ariadne-threading
 ```
 
 A C++20 compiler, CMake and pthread support are required.
 
+## Tests
+
+Build and run the C++ tests separately in Debug mode:
+
+```bash
+cmake -S . -B build-debug -DCMAKE_BUILD_TYPE=Debug
+cmake --build build-debug --parallel --target tests
+ctest --test-dir build-debug --output-on-failure
+```
+
 ## Coverage
 
-Configure a Debug build with coverage enabled:
+Configure a separate Debug build with coverage enabled:
 
 ```bash
-cmake .. -DCMAKE_BUILD_TYPE=Debug -DCOVERAGE=ON
-cmake --build . --parallel --target coverage
+cmake -S . -B build-coverage -DCMAKE_BUILD_TYPE=Debug -DCOVERAGE=ON
+cmake --build build-coverage --parallel --target coverage
 ```
 
-On Ubuntu the report is generated with GCC/lcov. On macOS it is generated with AppleClang/LLVM coverage tools. CI uploads the Ubuntu coverage report to Codecov.
+On Ubuntu the report is generated with GCC/lcov, and on macOS with AppleClang/LLVM coverage tools. CI uploads the macOS coverage report to Codecov.
 
-## ThreadSanitizer
+## Sanitizers
 
-For race detection, use a separate build configured with:
+The Sanitizers workflow runs two independent Debug jobs on Ubuntu with Clang:
+ThreadSanitizer (TSan) for data races, and AddressSanitizer with
+UndefinedBehaviorSanitizer (ASan + UBSan) for memory errors and undefined behavior.
+
+To run TSan locally, use a separate build:
 
 ```bash
-cmake .. -DCMAKE_BUILD_TYPE=Debug -DTHREAD_SANITIZER=ON
-cmake --build . --parallel
-ctest --output-on-failure
+cmake -S . -B build-tsan -DCMAKE_BUILD_TYPE=Debug -DTHREAD_SANITIZER=ON
+cmake --build build-tsan --parallel 2 --target tests
+ctest --test-dir build-tsan --output-on-failure
 ```
 
-Coverage and ThreadSanitizer builds are intentionally separate.
+Coverage and sanitizer builds are intentionally separate.
 
 ## License
 
