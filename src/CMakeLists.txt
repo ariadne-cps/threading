@@ -1,7 +1,7 @@
 set(LIBRARY_NAME THREADING_SRC)
 
 add_library(${LIBRARY_NAME} OBJECT
-        command_line.cpp
+        threading_command_line_interface.cpp
         thread.cpp
         buffered_thread.cpp
         thread_pool.cpp

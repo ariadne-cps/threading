@@ -1,5 +1,5 @@
 /***************************************************************************
- *            threading/command_line.hpp
+ *            threading/threading_command_line_interface.hpp
  *
  *  Copyright  2026  Luca Geretti
  *
@@ -22,17 +22,19 @@
  *  along with Threading.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#ifndef ARIADNE_THREADING_COMMAND_LINE_HPP
-#define ARIADNE_THREADING_COMMAND_LINE_HPP
+#ifndef ARIADNE_THREADING_COMMAND_LINE_INTERFACE_HPP
+#define ARIADNE_THREADING_COMMAND_LINE_INTERFACE_HPP
 
-#include "utility/command_line_interface.hpp"
+#include "logging/logging_command_line_interface.hpp"
 
 namespace Ariadne {
 
-//! \brief Command-line arguments configuring the threading module.
-//! \details Contributes the concurrency option only.
-CommandLineContribution threading_command_line();
+//! \brief Logging CLI extended with threading concurrency options.
+class ThreadingCommandLineInterface : public LoggingCommandLineInterface {
+  public:
+    ThreadingCommandLineInterface();
+};
 
 } // namespace Ariadne
 
-#endif // ARIADNE_THREADING_COMMAND_LINE_HPP
+#endif // ARIADNE_THREADING_COMMAND_LINE_INTERFACE_HPP

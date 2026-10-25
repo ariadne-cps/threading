@@ -1,5 +1,5 @@
 /***************************************************************************
- *            command_line.cpp
+ *            threading_command_line_interface.cpp
  *
  *  Copyright  2026  Luca Geretti
  *
@@ -22,13 +22,14 @@
  *  along with Threading.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#include "threading/command_line.hpp"
+#include "threading/threading_command_line_interface.hpp"
 #include "threading/thread_manager.hpp"
 
 namespace Ariadne {
 
-CommandLineContribution threading_command_line() {
-    return CommandLineContribution(
+ThreadingCommandLineInterface::ThreadingCommandLineInterface() {
+    ThreadManager::instance();
+    add(CommandLineContribution(
         "threading",
         {
             make_valued_argument_parser(
@@ -51,7 +52,7 @@ CommandLineContribution threading_command_line() {
                             static_cast<SizeType>(concurrency));
                     };
                 })
-        });
+        }));
 }
 
 } // namespace Ariadne

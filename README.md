@@ -19,6 +19,11 @@ A small C++20 library for thread management, thread pools, buffered workers and 
 - Thread-safe workload progress tracking.
 - Coverage support on Ubuntu/GCC and macOS/AppleClang.
 
+## Command-line interface
+
+`ThreadingCommandLineInterface` derives from `LoggingCommandLineInterface`,
+providing logging scheduler, theme, verbosity and threading concurrency options.
+
 ## Build
 
 Clone with submodules:

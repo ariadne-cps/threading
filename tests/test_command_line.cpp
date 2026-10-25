@@ -14,8 +14,9 @@
  *  (at your option) any later version.
  */
 
-#include "threading/command_line.hpp"
+#include "threading/threading_command_line_interface.hpp"
 #include "threading/thread_manager.hpp"
+#include "logging/logging.hpp"
 #include "macro/testing.hpp"
 
 using namespace Ariadne;
@@ -23,27 +24,34 @@ using namespace Ariadne;
 class TestCommandLine {
   public:
     Void test() {
-        ARIADNE_TEST_CALL(test_contribution())
+        ARIADNE_TEST_CALL(test_inherited_logging())
         ARIADNE_TEST_CALL(test_concurrency())
     }
 
   private:
-    CommandLineInterface make_cli() const {
-        CommandLineInterface cli;
-        cli.add(threading_command_line());
-        return cli;
+    ThreadingCommandLineInterface make_cli() const {
+        return ThreadingCommandLineInterface();
     }
 
-    Void test_contribution() {
-        CommandLineContribution const contribution=threading_command_line();
-        ARIADNE_TEST_EQUALS(contribution.name(),"threading")
-        ARIADNE_TEST_EQUALS(contribution.parsers().size(),1u)
-        ARIADNE_TEST_EQUALS(contribution.parsers()[0].short_id(),"c")
-        ARIADNE_TEST_EQUALS(contribution.parsers()[0].long_id(),"concurrency")
+    Void test_inherited_logging() {
+        ThreadingCommandLineInterface cli;
+        ARIADNE_TEST_ASSERT(cli.acquire({""}))
+        ARIADNE_TEST_ASSERT(cli.acquire({"","--scheduler","immediate","--verbosity","2","--concurrency","0","--theme","none"}))
+        ARIADNE_TEST_EQUALS(Logger::instance().configuration().verbosity(),2u)
+        ARIADNE_TEST_ASSERT(not Logger::instance().configuration().theme().has_style())
+        ARIADNE_TEST_EQUALS(ThreadManager::instance().concurrency(),0u)
+        ARIADNE_TEST_ASSERT(not cli.acquire({"","--concurrency","invalid"}))
+        Bool custom=false;
+        cli.add(CommandLineContribution("custom", {
+            make_unvalued_argument_parser("x","custom","Test inherited extension", [&custom] {custom=true;})
+        }));
+        ARIADNE_TEST_ASSERT(cli.acquire({"","--custom"}))
+        ARIADNE_TEST_ASSERT(custom)
+        Logger::instance().use_nonblocking_scheduler();
     }
 
     Void test_concurrency() {
-        CommandLineInterface cli=make_cli();
+        ThreadingCommandLineInterface cli=make_cli();
 
         ARIADNE_TEST_ASSERT(cli.acquire({"","-c","0"}))
         ARIADNE_TEST_EQUALS(ThreadManager::instance().concurrency(),0u)
