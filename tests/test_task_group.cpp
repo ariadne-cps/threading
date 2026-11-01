@@ -40,6 +40,9 @@ class TestTaskGroup : public Ariadne::Testing::ContextFixture {
         auto result = group.fork([] { return 21; });
         ARIADNE_TESTING_EXPECT_EQUAL(result.get(),21);
         group.join();
+        // A directly claimed task may leave a harmless queue wrapper; drain
+        // it explicitly before asserting the physical queue is empty.
+        while (pool.try_run_one_task()) { }
         ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
     }
 
@@ -60,9 +63,9 @@ class TestTaskGroup : public Ariadne::Testing::ContextFixture {
     }
 
     void test_deep_recursive_fork_join() {
-        // Regression for stack growth from FIFO cooperative helping.
-        // Both execution modes must handle a tree deeper than twelve levels.
-        for (unsigned workers : {0u,1u}) {
+        // The targeted fork/join wait must not build a stack of unrelated
+        // subtrees. Previously some schedulers crashed around depth 14.
+        for (unsigned workers : {0u,1u,4u}) {
             ThreadPool pool(workers);
             std::function<int(unsigned)> compute;
             compute = [&](unsigned depth) -> int {
@@ -74,7 +77,7 @@ class TestTaskGroup : public Ariadne::Testing::ContextFixture {
                 group.join();
                 return result;
             };
-            ARIADNE_TESTING_EXPECT_EQUAL(compute(13u),8192);
+            ARIADNE_TESTING_EXPECT_EQUAL(compute(14u),16384);
         }
     }
 

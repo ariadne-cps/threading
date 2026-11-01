@@ -26,6 +26,29 @@ LIFO helping does not guarantee bounded stack usage for arbitrary user
 tasks, prevent deadlocks caused by application locks, or establish a
 general fairness or completion-order guarantee.
 
+## Targeted helping for structured dependencies
+
+A `TaskHandle` returned by `TaskGroup::fork()` first attempts to execute
+its **own pending task**, using a one-shot atomic claim shared with the pool's
+queued wrapper. If a worker has already claimed that task, the waiting thread
+waits for its completion instead of executing unrelated queued tasks and
+forming an arbitrarily deep chain of nested helping calls.
+
+This differs from generic `try_run_one_task()`: task-group handles prioritize
+the concrete dependency they are waiting for. It preserves the same result
+and exception propagation and guarantees at most one invocation of each
+user callable even when a pool worker races with the waiting thread.
+
+An already claimed task's queued wrapper can remain until workers or an
+explicit helping call remove it. Such wrappers are no-ops; physical queue
+size can temporarily exceed the number of user callables yet to run.
+These extra queue entries are a first implementation tradeoff and may
+be optimized later. They must not be mistaken for tasks executed twice.
+
+This prevents unrelated queued sibling tasks from recursively extending the
+waiting thread's call stack. Arbitrary user recursion, cyclic dependencies
+or blocking operations can still exhaust a stack or deadlock.
+
 ## TaskGroup and TaskHandle
 
 Include threading/task_group.hpp. Construct TaskGroup<Scheduler> with a scheduler supporting enqueue and try_run_one_task. Each group.fork(callable) returns TaskHandle<Scheduler, Result>. handle.get() waits cooperatively and returns the result or rethrows the captured exception. group.join() waits for every fork before rethrowing the first exception in fork order. The group destructor joins outstanding tasks without throwing. Call join explicitly when errors matter.
