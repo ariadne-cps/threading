@@ -88,6 +88,18 @@ Pool construction, warm-up and destruction are excluded from timing.
 `--sweep` measures 1, 2, 4 and 8 workers at work=16, 128 and 1024;
 it cannot be combined with `--concurrency` or `--work`.
 Use `--mode recursive` or `--mode flat` to limit the sweep.
+For the recursive workload, `--cutoff-depth N` stops spawning tasks when
+the remaining tree depth is at most `N` (default 0 preserves the original
+fully forked workload). The same leaves and combination operations run
+regardless of the cutoff, so the checksum is unchanged. At depth `D`, the
+number of forked tasks is `2^(D-N)-1`; cutoff `D` is purely sequential.
+`--cutoff-sweep` compares even cutoffs from 0 through `D`, including the
+endpoint when `D` is odd, at fixed workers and work. It reports only the
+recursive workload and cannot be combined with `--sweep` or a nonzero
+`--cutoff-depth`. Use, for example:
+```bash
+./build-release/benchmarks/benchmark_thread_pool --concurrency 4 --work 128 --depth 14 --samples 9 --mode recursive --cutoff-sweep
+```
 The benchmark is built and run manually; it is not a CI or CTest gate.
 See [threading_design.md](doc/designs/threading_design.md) for the methodology.
 ## Coverage

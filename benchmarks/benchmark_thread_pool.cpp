@@ -47,9 +47,11 @@ struct Options {
     unsigned tasks = 4096u;
     unsigned work = 128u;
     unsigned depth = 9u;
+    unsigned cutoff_depth = 0u;
     unsigned samples = 9u;
     std::string mode = "both";
     bool sweep = false;
+    bool cutoff_sweep = false;
 };
 
 template<class UInt>
@@ -91,6 +93,14 @@ List<ArgumentParser> benchmark_parsers(Options& options) {
             return [&options,n] { options.depth=n; };
         }));
     parsers.append(make_valued_argument_parser(
+        "q","cutoff-depth","Stop forking at or below this remaining depth (0..14; default 0)",
+        [&options](String const& value) -> VoidFunction {
+            const unsigned n=parse_unsigned<unsigned>(value);
+            if(n>14u)
+                throw std::invalid_argument("cutoff depth out of range");
+            return [&options,n] { options.cutoff_depth=n; };
+        }));
+    parsers.append(make_valued_argument_parser(
         "n","samples","Odd sample count (3..101; default 9), plus warm-up",
         [&options](String const& value) -> VoidFunction {
             const unsigned n = parse_unsigned<unsigned>(value);
@@ -109,6 +119,9 @@ List<ArgumentParser> benchmark_parsers(Options& options) {
     parsers.append(make_unvalued_argument_parser(
         "","sweep","Compare 1,2,4,8 workers x work=16,128,1024",
         [&options] { options.sweep=true; }));
+    parsers.append(make_unvalued_argument_parser(
+        "","cutoff-sweep","Compare recursive cutoffs 0,2,...,depth at fixed workers/work",
+        [&options] { options.cutoff_sweep=true; }));
     return parsers;
 }
 
@@ -163,13 +176,17 @@ std::uint64_t recursive_reference(unsigned depth,std::uint64_t seed,unsigned wor
 
 template<class Scheduler>
 std::uint64_t recursive_run(Scheduler& scheduler,unsigned depth,
-                            std::uint64_t seed,unsigned work) {
-    if(depth==0u)return work_kernel(seed,work);
+                            std::uint64_t seed,unsigned work,
+                            unsigned cutoff_depth) {
+    // Evaluate the entire remaining subtree with the original reference
+    // recurrence. Only scheduling changes; every leaf and combine remains.
+    if(depth<=cutoff_depth)
+        return recursive_reference(depth,seed,work);
     TaskGroup<Scheduler> group(scheduler);
-    auto left=group.fork([&scheduler,depth,seed,work] {
-        return recursive_run(scheduler,depth-1u,seed^left_tag,work);
+    auto left=group.fork([&scheduler,depth,seed,work,cutoff_depth] {
+        return recursive_run(scheduler,depth-1u,seed^left_tag,work,cutoff_depth);
     });
-    const auto right=recursive_run(scheduler,depth-1u,seed+right_tag,work);
+    const auto right=recursive_run(scheduler,depth-1u,seed+right_tag,work,cutoff_depth);
     const auto result=combine(left.get(),right);
     group.join();
     return result;
@@ -226,7 +243,8 @@ double measure_pool(std::string const& mode, Options const& options,
     Scheduler scheduler(workers);
     auto run=[&]() -> std::uint64_t {
         if(mode=="flat")return flat_run(scheduler,options.tasks,options.work);
-        return recursive_run(scheduler,options.depth,left_tag,options.work);
+        return recursive_run(scheduler,options.depth,left_tag,options.work,
+                             options.cutoff_depth);
     };
     if(run()!=reference)
         throw std::runtime_error("warm-up checksum mismatch");
@@ -283,7 +301,12 @@ void report(std::string const& mode,Options const& options,unsigned workers) {
     auto times=compare(mode,options,workers);
     LOGGING_PRINTLN(" ")
     LOGGING_PRINTLN("Workload="<<mode<<" | workers="<<workers
-        <<" | work="<<options.work<<" | samples="<<options.samples)
+        <<" | work="<<options.work<<" | samples="<<options.samples
+        <<(mode=="recursive"
+            ? " | cutoff=" + std::to_string(options.cutoff_depth)
+                + " | forks=" + std::to_string(
+                    (1u<<(options.depth-options.cutoff_depth))-1u)
+            : std::string{}))
     LOGGING_PRINTLN(std::left<<std::setw(19)<<"Scheduler"
         <<std::right<<std::setw(13)<<"Median"
         <<std::setw(13)<<"Min"
@@ -345,10 +368,22 @@ int main(int argc,const char* argv[]) {
         if(options.sweep && (selected_concurrency || has_work_option(arguments)))
             throw std::invalid_argument(
                 "--sweep cannot be combined with --concurrency or --work");
+        if(options.cutoff_depth>options.depth)
+            throw std::invalid_argument("--cutoff-depth must not exceed --depth");
+        if(options.cutoff_sweep && options.sweep)
+            throw std::invalid_argument(
+                "--cutoff-sweep cannot be combined with --sweep");
+        if(options.cutoff_sweep && options.cutoff_depth!=0u)
+            throw std::invalid_argument(
+                "--cutoff-sweep cannot be combined with --cutoff-depth");
+        if(options.cutoff_sweep && options.mode=="flat")
+            throw std::invalid_argument(
+                "--cutoff-sweep requires a recursive workload");
 
         LOGGING_PRINTLN("ThreadPool / WorkStealingPool benchmark (Release recommended)")
         LOGGING_PRINTLN("tasks="<<options.tasks<<"  depth="<<options.depth
-            <<"  samples="<<options.samples<<"  mode="<<options.mode)
+            <<"  samples="<<options.samples<<"  mode="
+            <<(options.cutoff_sweep?"recursive (cutoff sweep)":options.mode))
         LOGGING_PRINTLN("Each pool runs alone; a new pool is warmed per sample.")
         LOGGING_PRINTLN("Median / Min / Max / MAD are per-sample statistics.")
         LOGGING_PRINTLN("Paired FIFO/steal is the median of per-pair ratios; >1 favors stealing.")
@@ -362,7 +397,22 @@ int main(int argc,const char* argv[]) {
                 report("recursive",selected,nworkers);
         };
 
-        if(options.sweep) {
+        if(options.cutoff_sweep) {
+            LOGGING_PRINTLN("Cutoff sweep: recursive only, workers="<<workers
+                <<", work="<<options.work)
+            // Evaluate even cutoffs, plus the full sequential baseline
+            // when depth is odd. The checksum remains identical throughout.
+            for(unsigned cutoff=0u;cutoff<=options.depth;cutoff+=2u) {
+                Options selected=options;
+                selected.cutoff_depth=cutoff;
+                report("recursive",selected,workers);
+            }
+            if(options.depth%2u!=0u) {
+                Options selected=options;
+                selected.cutoff_depth=options.depth;
+                report("recursive",selected,workers);
+            }
+        } else if(options.sweep) {
             LOGGING_PRINTLN("Sweep workers={1,2,4,8} x work={16,128,1024}")
             for(unsigned nworkers : {1u,2u,4u,8u})
                 for(unsigned rounds : {16u,128u,1024u})

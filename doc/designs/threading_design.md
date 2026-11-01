@@ -114,6 +114,15 @@ Both use the same `TaskGroup` and `TaskHandle` API.
 - `flat`: many independent integer-mixing tasks, submitted by the caller.
 - `recursive`: a binary fork/join tree, forking one child and computing the
   other locally, so helping waits and local scheduling are exercised.
+  `--cutoff-depth N` computes each remaining subtree sequentially once
+  its depth is at most N, without new task submissions; the same seed
+  transformations, leaf kernels and combines are used. It defaults to 0,
+  and requires N <= the total `--depth`. The binary tree produces
+  `2^(depth-cutoff)-1` forked children, with zero children at full cutoff.
+  Checksums are compared to the reference evaluated without any cutoff.
+  `--cutoff-sweep` measures cutoffs 0,2,...,depth (including the endpoint
+  when depth is odd) at fixed workers and work; it reports only recursive
+  samples and cannot be mixed with the worker/work `--sweep`.
 - Only one pool is alive at a time. Each paired sample creates, warms,
   measures and destroys each pool sequentially. This prevents idle workers
   in the competing pool from affecting measurements.
