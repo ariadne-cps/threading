@@ -29,7 +29,8 @@
 #ifndef THREADING_THREAD_POOL_HPP
 #define THREADING_THREAD_POOL_HPP
 
-#include <deque>
+#include <list>
+#include <unordered_map>
 #include <algorithm>
 #include "logging/logging.hpp"
 #include "utility/container.hpp"
@@ -76,6 +77,7 @@ class ThreadPool {
     size_t enqueue_ticket(VoidFunction task);
 
     //! \brief Extract and execute a particular still-queued task.
+    //! \details Uses a hash index with average O(1) lookup and list erase.
     //! \return False if a worker or other helper already removed the task.
     bool try_run_task(size_t ticket);
 
@@ -110,7 +112,9 @@ class ThreadPool {
   private:
     const String _name;
     List<shared_ptr<Thread>> _threads;
-    std::deque<QueuedTask> _tasks;
+    using TaskQueue = std::list<QueuedTask>;
+    TaskQueue _tasks;
+    std::unordered_map<size_t,TaskQueue::iterator> _tickets; // Same queue mutex.
     size_t _next_ticket{1}; // Guarded by _task_availability_mutex.
 
     mutable mutex _task_availability_mutex;

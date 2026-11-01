@@ -24,6 +24,8 @@
 
 #include "threading/thread_pool.hpp"
 
+#include <iterator>
+
 namespace Ariadne {
 
 String construct_thread_name(String prefix, size_t number, size_t max_number) {
@@ -39,7 +41,15 @@ size_t ThreadPool::_enqueue_task(VoidFunction task, bool tracked) {
     {
         lock_guard<mutex> lock(_task_availability_mutex);
         if (tracked) ticket=_next_ticket++;
-        _tasks.push_back(QueuedTask{ticket,std::move(task)});
+        auto it=_tasks.insert(_tasks.end(),QueuedTask{ticket,std::move(task)});
+        if (tracked) {
+            try {
+                _tickets.emplace(ticket,it);
+            } catch (...) {
+                _tasks.erase(it);
+                throw;
+            }
+        }
     }
     _task_availability_condition.notify_one();
     return ticket;
@@ -54,11 +64,12 @@ bool ThreadPool::try_run_task(size_t ticket) {
     VoidFunction task;
     {
         lock_guard<mutex> lock(_task_availability_mutex);
-        auto it=std::find_if(_tasks.begin(),_tasks.end(),
-            [ticket](QueuedTask const& entry) { return entry.ticket==ticket; });
-        if (it==_tasks.end()) return false;
+        const auto found=_tickets.find(ticket);
+        if (found==_tickets.end()) return false;
+        const auto it=found->second;
         task=std::move(it->function);
         _tasks.erase(it);
+        _tickets.erase(found);
     }
     task();
     return true;
@@ -79,8 +90,10 @@ VoidFunction ThreadPool::_task_wrapper_function(size_t i) {
                     if (_num_active_threads == _num_threads_to_use) _all_unused_threads_stopped_promise.set_value();
                     return;
                 }
-                task = std::move(_tasks.front().function);
-                _tasks.pop_front();
+                const auto it=_tasks.begin();
+                task=std::move(it->function);
+                if (it->ticket!=0) _tickets.erase(it->ticket);
+                _tasks.erase(it);
                 lock.unlock();
                 task();
             }
@@ -145,8 +158,10 @@ bool ThreadPool::try_run_one_task() {
         if (_tasks.empty()) return false;
         // Helping must prefer recent descendants: taking the oldest
         // pending task causes unbounded breadth-first nesting in fork/join.
-        task = std::move(_tasks.back().function);
-        _tasks.pop_back();
+        const auto it=std::prev(_tasks.end());
+        task=std::move(it->function);
+        if (it->ticket!=0) _tickets.erase(it->ticket);
+        _tasks.erase(it);
     }
     task();
     return true;

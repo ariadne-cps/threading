@@ -25,7 +25,9 @@
 #include <atomic>
 #include <condition_variable>
 #include <cstddef>
-#include <deque>
+#include <list>
+#include <unordered_map>
+#include <iterator>
 #include <functional>
 #include <future>
 #include <memory>
@@ -79,6 +81,8 @@ class WorkStealingPool {
     std::size_t enqueue_ticket(VoidFunction task);
 
     //! \brief Extract and execute a specific queued task when still pending.
+    //! \details Hash lookup finds its original queue and stable iterator;
+    //! the queue mutex protects against concurrent worker removal.
     //! \return False if another worker or helper has already taken it.
     bool try_run_task(std::size_t ticket);
 
@@ -100,9 +104,14 @@ class WorkStealingPool {
         std::size_t ticket;
         VoidFunction function;
     };
+    using TaskQueue=std::list<QueuedTask>;
     struct LocalQueue {
         std::mutex mutex;
-        std::deque<QueuedTask> tasks;
+        TaskQueue tasks;
+    };
+    struct TicketLocation {
+        std::size_t queue_index; // no_worker denotes global queue.
+        TaskQueue::iterator iterator;
     };
     struct WorkerContext {
         WorkStealingPool* pool;
@@ -112,8 +121,8 @@ class WorkStealingPool {
     static constexpr std::size_t no_worker = static_cast<std::size_t>(-1);
 
     std::size_t _enqueue(VoidFunction task, bool tracked = false);
-    bool _remove_ticket(std::deque<QueuedTask>& tasks,
-                        std::size_t ticket, VoidFunction& task);
+    // Caller must hold the corresponding queue mutex.
+    void _extract(TaskQueue& queue, TaskQueue::iterator it, VoidFunction& task);
     bool _take(VoidFunction& task);
     bool _take_local(std::size_t index, VoidFunction& task, bool steal);
     bool _take_global(VoidFunction& task);
@@ -121,7 +130,10 @@ class WorkStealingPool {
     void _worker_loop(std::size_t index);
 
     std::vector<std::unique_ptr<LocalQueue>> _locals;
-    std::deque<QueuedTask> _global;
+    TaskQueue _global;
+    std::mutex _ticket_mutex;
+    std::unordered_map<std::size_t,TicketLocation> _tickets;
+    // Queue mutex must precede ticket mutex when both are acquired.
     std::mutex _global_mutex;
     std::vector<std::shared_ptr<Thread>> _workers;
 
