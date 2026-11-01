@@ -22,6 +22,7 @@
  *  along with Threading.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include <chrono>
 #include <functional>
 #include "ariadne-testing.hpp"
 #include "utility/container.hpp"
@@ -290,7 +291,7 @@ class TestWorkload : public Ariadne::Testing::ContextFixture {
         wl.append(1);
         Thread processor([&wl] { wl.process(); },"processor");
         ARIADNE_TESTING_EXPECT_ATOMIC(state->started,
-            [](bool started) { return started; },5s);
+            [](bool started) { return started; },std::chrono::seconds(5));
         ARIADNE_TESTING_EXPECT_EXCEPTION(wl.process());
         state->release = true;
     }
