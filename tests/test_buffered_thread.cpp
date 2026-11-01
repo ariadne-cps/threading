@@ -63,8 +63,15 @@ class TestBufferedThread : public Ariadne::Testing::ContextFixture {
     }
 
     void test_destroy_before_completion() {
-        BufferedThread thread;
-        thread.enqueue([] { std::this_thread::sleep_for(std::chrono::milliseconds(100)); });
+        std::atomic<bool> completed{false};
+        {
+            BufferedThread thread;
+            thread.enqueue([&completed] {
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                completed.store(true);
+            });
+        } // Queued task must complete before destruction returns.
+        ARIADNE_TESTING_PROVE(completed.load());
     }
 
     void test_exception() {

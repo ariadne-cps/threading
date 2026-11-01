@@ -132,6 +132,7 @@ class TestWorkload : public Ariadne::Testing::ContextFixture {
         ThreadManager::instance().set_concurrency(0);
         auto result = std::make_shared<std::atomic<int>>();
         StaticWorkloadType wl(&sum_all, result);
+        ARIADNE_TESTING_EXPECT_EQUAL(wl.size(),std::size_t{0});
     }
 
     void test_construct_dynamic() {
@@ -204,9 +205,14 @@ class TestWorkload : public Ariadne::Testing::ContextFixture {
     void test_print_hold() {
         ThreadManager::instance().set_concurrency(0);
         Logger::instance().configuration().set_verbosity(2);
-        StaticWorkload<int> wl(&print);
+        std::size_t processed = 0;
+        StaticWorkload<int> wl([&processed](int const& value) {
+            print(value);
+            ++processed;
+        });
         wl.append({1,2,3,4,5});
-        wl.process();
+        ARIADNE_TESTING_EXPECT_NO_THROW(wl.process());
+        ARIADNE_TESTING_EXPECT_EQUAL(processed,std::size_t{5});
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
         Logger::instance().configuration().set_verbosity(0);
     }

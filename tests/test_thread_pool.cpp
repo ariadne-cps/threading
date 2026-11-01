@@ -89,8 +89,15 @@ class TestSmartThreadPool : public Ariadne::Testing::ContextFixture {
     }
 
     void test_destroy_before_completion() {
-        ThreadPool pool(1);
-        pool.enqueue([]{ std::this_thread::sleep_for(100ms); });
+        std::atomic<bool> completed{false};
+        {
+            ThreadPool pool(1);
+            pool.enqueue([&completed] {
+                std::this_thread::sleep_for(100ms);
+                completed.store(true);
+            });
+        } // Pool destruction drains the task and joins its worker.
+        ARIADNE_TESTING_PROVE(completed.load());
     }
 
     void test_execute_multiple_sequentially() {
@@ -258,8 +265,9 @@ class TestSmartThreadPool : public Ariadne::Testing::ContextFixture {
         shrink.get();
 
         ARIADNE_TESTING_EXPECT_EQUAL(pool.num_threads(),0);
+        // All two tasks must have either completed or remained queued.
         auto started_after_shrink = queued_started.load();
-        ARIADNE_TESTING_PROVE(started_after_shrink <= 2);
+        ARIADNE_TESTING_EXPECT_EQUAL(started_after_shrink + pool.queue_size(),std::size_t{2});
 
         pool.set_num_threads(1);
         queued1.get();

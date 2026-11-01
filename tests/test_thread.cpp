@@ -58,7 +58,14 @@ class TestThread : public Ariadne::Testing::ContextFixture {
     }
 
     void test_destroy_before_completion() {
-        Thread thread([] { std::this_thread::sleep_for(100ms); },"");
+        std::atomic<bool> completed{false};
+        {
+            Thread thread([&completed] {
+                std::this_thread::sleep_for(100ms);
+                completed.store(true);
+            },"");
+        } // Destructor must join the task.
+        ARIADNE_TESTING_PROVE(completed.load());
     }
 
     void test_task() {
