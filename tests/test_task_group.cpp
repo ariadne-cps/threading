@@ -142,39 +142,20 @@ class TestTaskGroup : public Ariadne::Testing::ContextFixture {
         manager.set_concurrency(0);
     }
 
-    static void add_cases(Ariadne::Testing::Suite& suite) {
-        suite.add("zero_worker_helping", [](Ariadne::Testing::Context& ctx) {
-            TestTaskGroup fixture(ctx); fixture.test_zero_worker_helping();
-        });
-        suite.add("nested_single_worker_fork_join", [](Ariadne::Testing::Context& ctx) {
-            TestTaskGroup fixture(ctx); fixture.test_nested_single_worker_fork_join();
-        });
-        suite.add("parallel_forks", [](Ariadne::Testing::Context& ctx) {
-            TestTaskGroup fixture(ctx); fixture.test_parallel_forks();
-        });
-        suite.add("join_drains_after_exception", [](Ariadne::Testing::Context& ctx) {
-            TestTaskGroup fixture(ctx); fixture.test_join_drains_after_exception();
-        });
-        suite.add("destructor_joins", [](Ariadne::Testing::Context& ctx) {
-            TestTaskGroup fixture(ctx); fixture.test_destructor_joins();
-        });
-        suite.add("void_handle", [](Ariadne::Testing::Context& ctx) {
-            TestTaskGroup fixture(ctx); fixture.test_void_handle();
-        });
-        suite.add("thread_manager_sequential_mode", [](Ariadne::Testing::Context& ctx) {
-            TestTaskGroup fixture(ctx); fixture.test_thread_manager_sequential_mode();
-        });
-        suite.add("thread_manager_worker_mode", [](Ariadne::Testing::Context& ctx) {
-            TestTaskGroup fixture(ctx); fixture.test_thread_manager_worker_mode();
-        });
-    }
 };
 
 int main(int argc, char** argv) {
     // ThreadPool workers register with Logger. ThreadManager installs
     // the process-wide registry before the first worker is constructed.
     (void)ThreadManager::instance();
-    Ariadne::Testing::Suite suite("task_group");
-    TestTaskGroup::add_cases(suite);
-    return Ariadne::Testing::run_suite(suite,argc,argv);
+    ARIADNE_TESTING_SUITE("task_group");
+    ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_zero_worker_helping);
+    ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_nested_single_worker_fork_join);
+    ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_parallel_forks);
+    ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_join_drains_after_exception);
+    ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_destructor_joins);
+    ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_void_handle);
+    ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_thread_manager_sequential_mode);
+    ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_thread_manager_worker_mode);
+    return ARIADNE_TESTING_RUN_TESTS_WITH_ARGS(argc, argv);
 }

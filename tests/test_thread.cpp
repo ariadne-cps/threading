@@ -126,43 +126,19 @@ class TestThread : public Ariadne::Testing::ContextFixture {
         threads.clear();
     }
 
-    static void add_cases(Ariadne::Testing::Suite& suite) {
-        suite.add("test_create", [](Ariadne::Testing::Context& context) {
-            TestThread fixture(context);
-            fixture.test_create();
-        });
-        suite.add("test_destroy_before_completion", [](Ariadne::Testing::Context& context) {
-            TestThread fixture(context);
-            fixture.test_destroy_before_completion();
-        });
-        suite.add("test_task", [](Ariadne::Testing::Context& context) {
-            TestThread fixture(context);
-            fixture.test_task();
-        });
-        suite.add("test_exception", [](Ariadne::Testing::Context& context) {
-            TestThread fixture(context);
-            fixture.test_exception();
-        });
-        suite.add("test_destroy_inactive", [](Ariadne::Testing::Context& context) {
-            TestThread fixture(context);
-            fixture.test_destroy_inactive();
-        });
-        suite.add("test_concurrent_activate", [](Ariadne::Testing::Context& context) {
-            TestThread fixture(context);
-            fixture.test_concurrent_activate();
-        });
-        suite.add("test_atomic_multiple_threads", [](Ariadne::Testing::Context& context) {
-            TestThread fixture(context);
-            fixture.test_atomic_multiple_threads();
-        });
-    }
 
 };
 
 int main(int argc, char** argv) {
     ThreadRegistry registry;
     Ariadne::Logger::instance().attach_thread_registry(&registry);
-    Ariadne::Testing::Suite suite("thread");
-    TestThread::add_cases(suite);
-    return Ariadne::Testing::run_suite(suite, argc, argv);
+    ARIADNE_TESTING_SUITE("thread");
+    ARIADNE_TESTING_ADD_TEST(TestThread, test_create);
+    ARIADNE_TESTING_ADD_TEST(TestThread, test_destroy_before_completion);
+    ARIADNE_TESTING_ADD_TEST(TestThread, test_task);
+    ARIADNE_TESTING_ADD_TEST(TestThread, test_exception);
+    ARIADNE_TESTING_ADD_TEST(TestThread, test_destroy_inactive);
+    ARIADNE_TESTING_ADD_TEST(TestThread, test_concurrent_activate);
+    ARIADNE_TESTING_ADD_TEST(TestThread, test_atomic_multiple_threads);
+    return ARIADNE_TESTING_RUN_TESTS_WITH_ARGS(argc, argv);
 }

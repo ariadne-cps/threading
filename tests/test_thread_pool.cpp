@@ -277,90 +277,30 @@ class TestSmartThreadPool : public Ariadne::Testing::ContextFixture {
         ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),0);
     }
 
-    static void add_cases(Ariadne::Testing::Suite& suite) {
-        suite.add("test_construct_thread_name", [](Ariadne::Testing::Context& context) {
-            TestSmartThreadPool fixture(context);
-            fixture.test_construct_thread_name();
-        });
-        suite.add("test_construct", [](Ariadne::Testing::Context& context) {
-            TestSmartThreadPool fixture(context);
-            fixture.test_construct();
-        });
-        suite.add("test_construct_empty", [](Ariadne::Testing::Context& context) {
-            TestSmartThreadPool fixture(context);
-            fixture.test_construct_empty();
-        });
-        suite.add("test_construct_with_name", [](Ariadne::Testing::Context& context) {
-            TestSmartThreadPool fixture(context);
-            fixture.test_construct_with_name();
-        });
-        suite.add("test_execute_single", [](Ariadne::Testing::Context& context) {
-            TestSmartThreadPool fixture(context);
-            fixture.test_execute_single();
-        });
-        suite.add("test_exception", [](Ariadne::Testing::Context& context) {
-            TestSmartThreadPool fixture(context);
-            fixture.test_exception();
-        });
-        suite.add("test_destroy_before_completion", [](Ariadne::Testing::Context& context) {
-            TestSmartThreadPool fixture(context);
-            fixture.test_destroy_before_completion();
-        });
-        suite.add("test_execute_multiple_sequentially", [](Ariadne::Testing::Context& context) {
-            TestSmartThreadPool fixture(context);
-            fixture.test_execute_multiple_sequentially();
-        });
-        suite.add("test_execute_multiple_concurrently", [](Ariadne::Testing::Context& context) {
-            TestSmartThreadPool fixture(context);
-            fixture.test_execute_multiple_concurrently();
-        });
-        suite.add("test_execute_multiple_concurrently_sequentially", [](Ariadne::Testing::Context& context) {
-            TestSmartThreadPool fixture(context);
-            fixture.test_execute_multiple_concurrently_sequentially();
-        });
-        suite.add("test_process_on_atomic_type", [](Ariadne::Testing::Context& context) {
-            TestSmartThreadPool fixture(context);
-            fixture.test_process_on_atomic_type();
-        });
-        suite.add("test_set_num_threads_up_statically", [](Ariadne::Testing::Context& context) {
-            TestSmartThreadPool fixture(context);
-            fixture.test_set_num_threads_up_statically();
-        });
-        suite.add("test_set_num_threads_same_statically", [](Ariadne::Testing::Context& context) {
-            TestSmartThreadPool fixture(context);
-            fixture.test_set_num_threads_same_statically();
-        });
-        suite.add("test_set_num_threads_down_statically", [](Ariadne::Testing::Context& context) {
-            TestSmartThreadPool fixture(context);
-            fixture.test_set_num_threads_down_statically();
-        });
-        suite.add("test_set_num_threads_up_dynamically", [](Ariadne::Testing::Context& context) {
-            TestSmartThreadPool fixture(context);
-            fixture.test_set_num_threads_up_dynamically();
-        });
-        suite.add("test_set_num_threads_down_dynamically", [](Ariadne::Testing::Context& context) {
-            TestSmartThreadPool fixture(context);
-            fixture.test_set_num_threads_down_dynamically();
-        });
-        suite.add("test_shrink_from_worker_is_rejected", [](Ariadne::Testing::Context& context) {
-            TestSmartThreadPool fixture(context);
-            fixture.test_shrink_from_worker_is_rejected();
-        });
-        suite.add("test_resize_repeatedly", [](Ariadne::Testing::Context& context) {
-            TestSmartThreadPool fixture(context);
-            fixture.test_resize_repeatedly();
-        });
-        suite.add("test_set_num_threads_to_zero_dynamically", [](Ariadne::Testing::Context& context) {
-            TestSmartThreadPool fixture(context);
-            fixture.test_set_num_threads_to_zero_dynamically();
-        });
-    }
 };
 
 int main(int argc, char** argv) {
     ThreadRegistry registry;
     Ariadne::Logger::instance().attach_thread_registry(&registry);
-    Ariadne::Testing::Suite suite("thread_pool");
-    TestSmartThreadPool::add_cases(suite);
-    return Ariadne::Testing::run_suite(suite, argc, argv);
+    ARIADNE_TESTING_SUITE("thread_pool");
+    ARIADNE_TESTING_ADD_TEST(TestSmartThreadPool, test_construct_thread_name);
+    ARIADNE_TESTING_ADD_TEST(TestSmartThreadPool, test_construct);
+    ARIADNE_TESTING_ADD_TEST(TestSmartThreadPool, test_construct_empty);
+    ARIADNE_TESTING_ADD_TEST(TestSmartThreadPool, test_construct_with_name);
+    ARIADNE_TESTING_ADD_TEST(TestSmartThreadPool, test_execute_single);
+    ARIADNE_TESTING_ADD_TEST(TestSmartThreadPool, test_exception);
+    ARIADNE_TESTING_ADD_TEST(TestSmartThreadPool, test_destroy_before_completion);
+    ARIADNE_TESTING_ADD_TEST(TestSmartThreadPool, test_execute_multiple_sequentially);
+    ARIADNE_TESTING_ADD_TEST(TestSmartThreadPool, test_execute_multiple_concurrently);
+    ARIADNE_TESTING_ADD_TEST(TestSmartThreadPool, test_execute_multiple_concurrently_sequentially);
+    ARIADNE_TESTING_ADD_TEST(TestSmartThreadPool, test_process_on_atomic_type);
+    ARIADNE_TESTING_ADD_TEST(TestSmartThreadPool, test_set_num_threads_up_statically);
+    ARIADNE_TESTING_ADD_TEST(TestSmartThreadPool, test_set_num_threads_same_statically);
+    ARIADNE_TESTING_ADD_TEST(TestSmartThreadPool, test_set_num_threads_down_statically);
+    ARIADNE_TESTING_ADD_TEST(TestSmartThreadPool, test_set_num_threads_up_dynamically);
+    ARIADNE_TESTING_ADD_TEST(TestSmartThreadPool, test_set_num_threads_down_dynamically);
+    ARIADNE_TESTING_ADD_TEST(TestSmartThreadPool, test_shrink_from_worker_is_rejected);
+    ARIADNE_TESTING_ADD_TEST(TestSmartThreadPool, test_resize_repeatedly);
+    ARIADNE_TESTING_ADD_TEST(TestSmartThreadPool, test_set_num_threads_to_zero_dynamically);
+    return ARIADNE_TESTING_RUN_TESTS_WITH_ARGS(argc, argv);
 }

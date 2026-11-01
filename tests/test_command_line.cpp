@@ -25,22 +25,13 @@ class TestCommandLine : public Ariadne::Testing::ContextFixture {
   public:
     using ContextFixture::ContextFixture;
   public:
-    static void add_cases(Ariadne::Testing::Suite& suite) {
-        suite.add("test_inherited_logging", [](Ariadne::Testing::Context& context) {
-            TestCommandLine fixture(context);
-            fixture.test_inherited_logging();
-        });
-        suite.add("test_concurrency", [](Ariadne::Testing::Context& context) {
-            TestCommandLine fixture(context);
-            fixture.test_concurrency();
-        });
-    }
 
   private:
     ThreadingCommandLineInterface make_cli() const {
         return ThreadingCommandLineInterface();
     }
 
+  public:
     Void test_inherited_logging() {
         ThreadingCommandLineInterface cli;
         ARIADNE_TESTING_PROVE(cli.acquire({""}));
@@ -81,7 +72,8 @@ class TestCommandLine : public Ariadne::Testing::ContextFixture {
 };
 
 int main(int argc, char** argv) {
-    Ariadne::Testing::Suite suite("command_line");
-    TestCommandLine::add_cases(suite);
-    return Ariadne::Testing::run_suite(suite, argc, argv);
+    ARIADNE_TESTING_SUITE("command_line");
+    ARIADNE_TESTING_ADD_TEST(TestCommandLine, test_inherited_logging);
+    ARIADNE_TESTING_ADD_TEST(TestCommandLine, test_concurrency);
+    return ARIADNE_TESTING_RUN_TESTS_WITH_ARGS(argc, argv);
 }

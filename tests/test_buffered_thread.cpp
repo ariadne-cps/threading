@@ -172,59 +172,23 @@ class TestBufferedThread : public Ariadne::Testing::ContextFixture {
         threads.clear();
     }
 
-    static void add_cases(Ariadne::Testing::Suite& suite) {
-        suite.add("test_create", [](Ariadne::Testing::Context& context) {
-            TestBufferedThread fixture(context);
-            fixture.test_create();
-        });
-        suite.add("test_set_queue_capacity", [](Ariadne::Testing::Context& context) {
-            TestBufferedThread fixture(context);
-            fixture.test_set_queue_capacity();
-        });
-        suite.add("test_destroy_before_completion", [](Ariadne::Testing::Context& context) {
-            TestBufferedThread fixture(context);
-            fixture.test_destroy_before_completion();
-        });
-        suite.add("test_exception", [](Ariadne::Testing::Context& context) {
-            TestBufferedThread fixture(context);
-            fixture.test_exception();
-        });
-        suite.add("test_has_queued_tasks", [](Ariadne::Testing::Context& context) {
-            TestBufferedThread fixture(context);
-            fixture.test_has_queued_tasks();
-        });
-        suite.add("test_set_queue_capacity_down_failure", [](Ariadne::Testing::Context& context) {
-            TestBufferedThread fixture(context);
-            fixture.test_set_queue_capacity_down_failure();
-        });
-        suite.add("test_task_return", [](Ariadne::Testing::Context& context) {
-            TestBufferedThread fixture(context);
-            fixture.test_task_return();
-        });
-        suite.add("test_task_capture", [](Ariadne::Testing::Context& context) {
-            TestBufferedThread fixture(context);
-            fixture.test_task_capture();
-        });
-        suite.add("test_task_arguments", [](Ariadne::Testing::Context& context) {
-            TestBufferedThread fixture(context);
-            fixture.test_task_arguments();
-        });
-        suite.add("test_multiple_tasks", [](Ariadne::Testing::Context& context) {
-            TestBufferedThread fixture(context);
-            fixture.test_multiple_tasks();
-        });
-        suite.add("test_atomic_multiple_threads", [](Ariadne::Testing::Context& context) {
-            TestBufferedThread fixture(context);
-            fixture.test_atomic_multiple_threads();
-        });
-    }
 
 };
 
 int main(int argc, char** argv) {
     ThreadRegistry registry;
     Ariadne::Logger::instance().attach_thread_registry(&registry);
-    Ariadne::Testing::Suite suite("buffered_thread");
-    TestBufferedThread::add_cases(suite);
-    return Ariadne::Testing::run_suite(suite, argc, argv);
+    ARIADNE_TESTING_SUITE("buffered_thread");
+    ARIADNE_TESTING_ADD_TEST(TestBufferedThread, test_create);
+    ARIADNE_TESTING_ADD_TEST(TestBufferedThread, test_set_queue_capacity);
+    ARIADNE_TESTING_ADD_TEST(TestBufferedThread, test_destroy_before_completion);
+    ARIADNE_TESTING_ADD_TEST(TestBufferedThread, test_exception);
+    ARIADNE_TESTING_ADD_TEST(TestBufferedThread, test_has_queued_tasks);
+    ARIADNE_TESTING_ADD_TEST(TestBufferedThread, test_set_queue_capacity_down_failure);
+    ARIADNE_TESTING_ADD_TEST(TestBufferedThread, test_task_return);
+    ARIADNE_TESTING_ADD_TEST(TestBufferedThread, test_task_capture);
+    ARIADNE_TESTING_ADD_TEST(TestBufferedThread, test_task_arguments);
+    ARIADNE_TESTING_ADD_TEST(TestBufferedThread, test_multiple_tasks);
+    ARIADNE_TESTING_ADD_TEST(TestBufferedThread, test_atomic_multiple_threads);
+    return ARIADNE_TESTING_RUN_TESTS_WITH_ARGS(argc, argv);
 }

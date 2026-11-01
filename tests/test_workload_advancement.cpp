@@ -108,37 +108,16 @@ class TestWorkloadAdvancement : public Ariadne::Testing::ContextFixture {
         ARIADNE_TESTING_EXPECT_EQUAL(wp.completion_rate(),0.25);
     }
 
-    static void add_cases(Ariadne::Testing::Suite& suite) {
-        suite.add("test_empty_completion_rate", [](Ariadne::Testing::Context& context) {
-            TestWorkloadAdvancement fixture(context);
-            fixture.test_empty_completion_rate();
-        });
-        suite.add("test_creation", [](Ariadne::Testing::Context& context) {
-            TestWorkloadAdvancement fixture(context);
-            fixture.test_creation();
-        });
-        suite.add("test_advance", [](Ariadne::Testing::Context& context) {
-            TestWorkloadAdvancement fixture(context);
-            fixture.test_advance();
-        });
-        suite.add("test_finished", [](Ariadne::Testing::Context& context) {
-            TestWorkloadAdvancement fixture(context);
-            fixture.test_finished();
-        });
-        suite.add("test_concurrent_transitions", [](Ariadne::Testing::Context& context) {
-            TestWorkloadAdvancement fixture(context);
-            fixture.test_concurrent_transitions();
-        });
-        suite.add("test_invalid_transitions", [](Ariadne::Testing::Context& context) {
-            TestWorkloadAdvancement fixture(context);
-            fixture.test_invalid_transitions();
-        });
-    }
 
 };
 
 int main(int argc, char** argv) {
-    Ariadne::Testing::Suite suite("workload_advancement");
-    TestWorkloadAdvancement::add_cases(suite);
-    return Ariadne::Testing::run_suite(suite, argc, argv);
+    ARIADNE_TESTING_SUITE("workload_advancement");
+    ARIADNE_TESTING_ADD_TEST(TestWorkloadAdvancement, test_empty_completion_rate);
+    ARIADNE_TESTING_ADD_TEST(TestWorkloadAdvancement, test_creation);
+    ARIADNE_TESTING_ADD_TEST(TestWorkloadAdvancement, test_advance);
+    ARIADNE_TESTING_ADD_TEST(TestWorkloadAdvancement, test_finished);
+    ARIADNE_TESTING_ADD_TEST(TestWorkloadAdvancement, test_concurrent_transitions);
+    ARIADNE_TESTING_ADD_TEST(TestWorkloadAdvancement, test_invalid_transitions);
+    return ARIADNE_TESTING_RUN_TESTS_WITH_ARGS(argc, argv);
 }

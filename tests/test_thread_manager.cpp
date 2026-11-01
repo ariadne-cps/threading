@@ -152,44 +152,17 @@ class TestThreadManager : public Ariadne::Testing::ContextFixture {
         ARIADNE_TESTING_EXPECT_NO_THROW(ThreadManager::instance().set_concurrency(0));
     }
 
-    static void add_cases(Ariadne::Testing::Suite& suite) {
-        suite.add("test_set_concurrency", [](Ariadne::Testing::Context& context) {
-            TestThreadManager fixture(context);
-            fixture.test_set_concurrency();
-        });
-        suite.add("test_run_task_with_one_thread", [](Ariadne::Testing::Context& context) {
-            TestThreadManager fixture(context);
-            fixture.test_run_task_with_one_thread();
-        });
-        suite.add("test_run_task_with_multiple_threads", [](Ariadne::Testing::Context& context) {
-            TestThreadManager fixture(context);
-            fixture.test_run_task_with_multiple_threads();
-        });
-        suite.add("test_run_task_with_no_threads", [](Ariadne::Testing::Context& context) {
-            TestThreadManager fixture(context);
-            fixture.test_run_task_with_no_threads();
-        });
-        suite.add("test_void_task_with_no_threads", [](Ariadne::Testing::Context& context) {
-            TestThreadManager fixture(context);
-            fixture.test_void_task_with_no_threads();
-        });
-        suite.add("test_concurrency_read_during_shrink", [](Ariadne::Testing::Context& context) {
-            TestThreadManager fixture(context);
-            fixture.test_concurrency_read_during_shrink();
-        });
-        suite.add("test_worker_cannot_shrink_manager", [](Ariadne::Testing::Context& context) {
-            TestThreadManager fixture(context);
-            fixture.test_worker_cannot_shrink_manager();
-        });
-        suite.add("test_change_concurrency_and_log_scheduler", [](Ariadne::Testing::Context& context) {
-            TestThreadManager fixture(context);
-            fixture.test_change_concurrency_and_log_scheduler();
-        });
-    }
 };
 
 int main(int argc, char** argv) {
-    Ariadne::Testing::Suite suite("thread_manager");
-    TestThreadManager::add_cases(suite);
-    return Ariadne::Testing::run_suite(suite, argc, argv);
+    ARIADNE_TESTING_SUITE("thread_manager");
+    ARIADNE_TESTING_ADD_TEST(TestThreadManager, test_set_concurrency);
+    ARIADNE_TESTING_ADD_TEST(TestThreadManager, test_run_task_with_one_thread);
+    ARIADNE_TESTING_ADD_TEST(TestThreadManager, test_run_task_with_multiple_threads);
+    ARIADNE_TESTING_ADD_TEST(TestThreadManager, test_run_task_with_no_threads);
+    ARIADNE_TESTING_ADD_TEST(TestThreadManager, test_void_task_with_no_threads);
+    ARIADNE_TESTING_ADD_TEST(TestThreadManager, test_concurrency_read_during_shrink);
+    ARIADNE_TESTING_ADD_TEST(TestThreadManager, test_worker_cannot_shrink_manager);
+    ARIADNE_TESTING_ADD_TEST(TestThreadManager, test_change_concurrency_and_log_scheduler);
+    return ARIADNE_TESTING_RUN_TESTS_WITH_ARGS(argc, argv);
 }

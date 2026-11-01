@@ -146,40 +146,16 @@ class TestBuffer : public Ariadne::Testing::ContextFixture {
         ARIADNE_TESTING_EXPECT_EQUAL(buffer.size(),0);
     }
 
-    static void add_cases(Ariadne::Testing::Suite& suite) {
-        suite.add("test_construct", [](Ariadne::Testing::Context& context) {
-            TestBuffer fixture(context);
-            fixture.test_construct();
-        });
-        suite.add("test_construct_invalid", [](Ariadne::Testing::Context& context) {
-            TestBuffer fixture(context);
-            fixture.test_construct_invalid();
-        });
-        suite.add("test_set_capacity_when_empty", [](Ariadne::Testing::Context& context) {
-            TestBuffer fixture(context);
-            fixture.test_set_capacity_when_empty();
-        });
-        suite.add("test_set_capacity_when_filled", [](Ariadne::Testing::Context& context) {
-            TestBuffer fixture(context);
-            fixture.test_set_capacity_when_filled();
-        });
-        suite.add("test_single_buffer", [](Ariadne::Testing::Context& context) {
-            TestBuffer fixture(context);
-            fixture.test_single_buffer();
-        });
-        suite.add("test_io_buffer", [](Ariadne::Testing::Context& context) {
-            TestBuffer fixture(context);
-            fixture.test_io_buffer();
-        });
-        suite.add("test_multiple_producers_consumers", [](Ariadne::Testing::Context& context) {
-            TestBuffer fixture(context);
-            fixture.test_multiple_producers_consumers();
-        });
-    }
 };
 
 int main(int argc, char** argv) {
-    Ariadne::Testing::Suite suite("buffer");
-    TestBuffer::add_cases(suite);
-    return Ariadne::Testing::run_suite(suite, argc, argv);
+    ARIADNE_TESTING_SUITE("buffer");
+    ARIADNE_TESTING_ADD_TEST(TestBuffer, test_construct);
+    ARIADNE_TESTING_ADD_TEST(TestBuffer, test_construct_invalid);
+    ARIADNE_TESTING_ADD_TEST(TestBuffer, test_set_capacity_when_empty);
+    ARIADNE_TESTING_ADD_TEST(TestBuffer, test_set_capacity_when_filled);
+    ARIADNE_TESTING_ADD_TEST(TestBuffer, test_single_buffer);
+    ARIADNE_TESTING_ADD_TEST(TestBuffer, test_io_buffer);
+    ARIADNE_TESTING_ADD_TEST(TestBuffer, test_multiple_producers_consumers);
+    return ARIADNE_TESTING_RUN_TESTS_WITH_ARGS(argc, argv);
 }

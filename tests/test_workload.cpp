@@ -404,105 +404,33 @@ class TestWorkload : public Ariadne::Testing::ContextFixture {
         ARIADNE_TESTING_EXPECT_EQUAL(result->size(),5);
     }
 
-    static void add_cases(Ariadne::Testing::Suite& suite) {
-        suite.add("test_construct_static", [](Ariadne::Testing::Context& context) {
-            TestWorkload fixture(context);
-            fixture.test_construct_static();
-        });
-        suite.add("test_construct_dynamic", [](Ariadne::Testing::Context& context) {
-            TestWorkload fixture(context);
-            fixture.test_construct_dynamic();
-        });
-        suite.add("test_append", [](Ariadne::Testing::Context& context) {
-            TestWorkload fixture(context);
-            fixture.test_append();
-        });
-        suite.add("test_process_nothing", [](Ariadne::Testing::Context& context) {
-            TestWorkload fixture(context);
-            fixture.test_process_nothing();
-        });
-        suite.add("test_serial_processing_static", [](Ariadne::Testing::Context& context) {
-            TestWorkload fixture(context);
-            fixture.test_serial_processing_static();
-        });
-        suite.add("test_serial_processing_dynamic", [](Ariadne::Testing::Context& context) {
-            TestWorkload fixture(context);
-            fixture.test_serial_processing_dynamic();
-        });
-        suite.add("test_concurrent_processing_static", [](Ariadne::Testing::Context& context) {
-            TestWorkload fixture(context);
-            fixture.test_concurrent_processing_static();
-        });
-        suite.add("test_concurrent_processing_dynamic", [](Ariadne::Testing::Context& context) {
-            TestWorkload fixture(context);
-            fixture.test_concurrent_processing_dynamic();
-        });
-        suite.add("test_print_hold", [](Ariadne::Testing::Context& context) {
-            TestWorkload fixture(context);
-            fixture.test_print_hold();
-        });
-        suite.add("test_throw_serial_exception_immediately", [](Ariadne::Testing::Context& context) {
-            TestWorkload fixture(context);
-            fixture.test_throw_serial_exception_immediately();
-        });
-        suite.add("test_throw_serial_exception_later", [](Ariadne::Testing::Context& context) {
-            TestWorkload fixture(context);
-            fixture.test_throw_serial_exception_later();
-        });
-        suite.add("test_throw_concurrent_exception_immediately", [](Ariadne::Testing::Context& context) {
-            TestWorkload fixture(context);
-            fixture.test_throw_concurrent_exception_immediately();
-        });
-        suite.add("test_throw_concurrent_exception_later", [](Ariadne::Testing::Context& context) {
-            TestWorkload fixture(context);
-            fixture.test_throw_concurrent_exception_later();
-        });
-        suite.add("test_concurrent_logger_level_increase", [](Ariadne::Testing::Context& context) {
-            TestWorkload fixture(context);
-            fixture.test_concurrent_logger_level_increase();
-        });
-        suite.add("test_concurrent_logger_level_decrease", [](Ariadne::Testing::Context& context) {
-            TestWorkload fixture(context);
-            fixture.test_concurrent_logger_level_decrease();
-        });
-        suite.add("test_concurrent_process_is_rejected", [](Ariadne::Testing::Context& context) {
-            TestWorkload fixture(context);
-            fixture.test_concurrent_process_is_rejected();
-        });
-        suite.add("test_progress_acknowledgement_is_serialised", [](Ariadne::Testing::Context& context) {
-            TestWorkload fixture(context);
-            fixture.test_progress_acknowledgement_is_serialised();
-        });
-        suite.add("test_multiple_concurrent_exceptions_preserve_first", [](Ariadne::Testing::Context& context) {
-            TestWorkload fixture(context);
-            fixture.test_multiple_concurrent_exceptions_preserve_first();
-        });
-        suite.add("test_concurrent_exception_waits_for_running_tasks", [](Ariadne::Testing::Context& context) {
-            TestWorkload fixture(context);
-            fixture.test_concurrent_exception_waits_for_running_tasks();
-        });
-        suite.add("test_reuse_after_serial_exception", [](Ariadne::Testing::Context& context) {
-            TestWorkload fixture(context);
-            fixture.test_reuse_after_serial_exception();
-        });
-        suite.add("test_reuse_after_concurrent_exception", [](Ariadne::Testing::Context& context) {
-            TestWorkload fixture(context);
-            fixture.test_reuse_after_concurrent_exception();
-        });
-        suite.add("test_multiple_append", [](Ariadne::Testing::Context& context) {
-            TestWorkload fixture(context);
-            fixture.test_multiple_append();
-        });
-        suite.add("test_multiple_process", [](Ariadne::Testing::Context& context) {
-            TestWorkload fixture(context);
-            fixture.test_multiple_process();
-        });
-    }
 
 };
 
 int main(int argc, char** argv) {
-    Ariadne::Testing::Suite suite("workload");
-    TestWorkload::add_cases(suite);
-    return Ariadne::Testing::run_suite(suite, argc, argv);
+    ARIADNE_TESTING_SUITE("workload");
+    ARIADNE_TESTING_ADD_TEST(TestWorkload, test_construct_static);
+    ARIADNE_TESTING_ADD_TEST(TestWorkload, test_construct_dynamic);
+    ARIADNE_TESTING_ADD_TEST(TestWorkload, test_append);
+    ARIADNE_TESTING_ADD_TEST(TestWorkload, test_process_nothing);
+    ARIADNE_TESTING_ADD_TEST(TestWorkload, test_serial_processing_static);
+    ARIADNE_TESTING_ADD_TEST(TestWorkload, test_serial_processing_dynamic);
+    ARIADNE_TESTING_ADD_TEST(TestWorkload, test_concurrent_processing_static);
+    ARIADNE_TESTING_ADD_TEST(TestWorkload, test_concurrent_processing_dynamic);
+    ARIADNE_TESTING_ADD_TEST(TestWorkload, test_print_hold);
+    ARIADNE_TESTING_ADD_TEST(TestWorkload, test_throw_serial_exception_immediately);
+    ARIADNE_TESTING_ADD_TEST(TestWorkload, test_throw_serial_exception_later);
+    ARIADNE_TESTING_ADD_TEST(TestWorkload, test_throw_concurrent_exception_immediately);
+    ARIADNE_TESTING_ADD_TEST(TestWorkload, test_throw_concurrent_exception_later);
+    ARIADNE_TESTING_ADD_TEST(TestWorkload, test_concurrent_logger_level_increase);
+    ARIADNE_TESTING_ADD_TEST(TestWorkload, test_concurrent_logger_level_decrease);
+    ARIADNE_TESTING_ADD_TEST(TestWorkload, test_concurrent_process_is_rejected);
+    ARIADNE_TESTING_ADD_TEST(TestWorkload, test_progress_acknowledgement_is_serialised);
+    ARIADNE_TESTING_ADD_TEST(TestWorkload, test_multiple_concurrent_exceptions_preserve_first);
+    ARIADNE_TESTING_ADD_TEST(TestWorkload, test_concurrent_exception_waits_for_running_tasks);
+    ARIADNE_TESTING_ADD_TEST(TestWorkload, test_reuse_after_serial_exception);
+    ARIADNE_TESTING_ADD_TEST(TestWorkload, test_reuse_after_concurrent_exception);
+    ARIADNE_TESTING_ADD_TEST(TestWorkload, test_multiple_append);
+    ARIADNE_TESTING_ADD_TEST(TestWorkload, test_multiple_process);
+    return ARIADNE_TESTING_RUN_TESTS_WITH_ARGS(argc, argv);
 }
