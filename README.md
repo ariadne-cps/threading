@@ -17,6 +17,10 @@ A small C++20 library for thread management, thread pools, buffered workers and 
 - `ThreadManager`: process-wide concurrency management.
 - `StaticWorkload` and `DynamicWorkload`: serial or concurrent workload processing.
 - Thread-safe workload progress tracking.
+- Structured fork/join via `TaskGroup` and `TaskHandle`, using cooperative
+  waits to execute pending work from the same scheduler. Task groups join
+  outstanding tasks on scope exit and propagate exceptions on explicit join.
+  Work stealing is not part of this first fork/join implementation.
 - Coverage support on Ubuntu/GCC and macOS/AppleClang.
 
 ## Command-line interface

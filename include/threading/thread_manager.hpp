@@ -80,6 +80,11 @@ class ThreadManager : public ThreadRegistryInterface {
     //! \details Fails if the concurrency is not zero
     void set_logging_nonblocking_scheduler() const;
 
+    //! \brief Execute one pending task from the managed pool on the caller.
+    //! \details Supports cooperative waiting for nested fork/join workloads.
+    //! This does not alter the configured concurrency.
+    bool try_run_one_task();
+
     //! \brief Enqueue a task for execution, returning the future handler
     //! \details The is no limits on the number of tasks to enqueue. If concurrency is zero,
     //! then the task is executed sequentially with no threads involved

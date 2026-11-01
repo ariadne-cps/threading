@@ -116,6 +116,18 @@ void ThreadPool::set_num_threads(size_t number) {
     }
 }
 
+bool ThreadPool::try_run_one_task() {
+    VoidFunction task;
+    {
+        lock_guard<mutex> lock(_task_availability_mutex);
+        if (_tasks.empty()) return false;
+        task = std::move(_tasks.front());
+        _tasks.pop();
+    }
+    task();
+    return true;
+}
+
 size_t ThreadPool::queue_size() const {
     lock_guard<mutex> lock(_task_availability_mutex);
     return _tasks.size();

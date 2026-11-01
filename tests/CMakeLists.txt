@@ -13,6 +13,7 @@ set(UNIT_TESTS
     test_thread_manager
     test_workload_advancement
     test_workload
+    test_task_group
 )
 
 foreach(TEST ${UNIT_TESTS})

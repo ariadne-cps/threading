@@ -52,6 +52,10 @@ size_t ThreadManager::concurrency() const {
     return _concurrency.load();
 }
 
+bool ThreadManager::try_run_one_task() {
+    return _pool.try_run_one_task();
+}
+
 void ThreadManager::set_concurrency(size_t value) {
     ARIADNE_PRECONDITION(value <= _maximum_concurrency);
     lock_guard<mutex> lock(_concurrency_change_mutex);

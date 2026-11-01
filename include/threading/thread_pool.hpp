@@ -61,6 +61,13 @@ class ThreadPool {
     //! \brief The name of the pool
     String name() const;
 
+    //! \brief Run at most one pending task on the calling thread.
+    //! \details Used by structured fork/join waits so a worker can execute
+    //! queued descendants instead of blocking behind them. A task is removed
+    //! while holding the queue mutex and executed after releasing it.
+    //! \return True iff a pending task was taken and executed.
+    bool try_run_one_task();
+
     //! \brief The size of the tasks queue
     size_t queue_size() const;
 
