@@ -191,6 +191,7 @@ struct Comparison { double fifo_ms; double steal_ms; };
 Comparison compare(std::string const& mode,Options const& options,unsigned workers) {
     // The same number of workers, tasks and computations for each scheduler.
     // Construct both pools outside all timed samples.
+    // Every forked task now leaves its physical scheduler queue exactly once.
     ThreadPool fifo(workers);
     WorkStealingPool stealing(workers);
     const std::uint64_t reference=(mode=="flat")

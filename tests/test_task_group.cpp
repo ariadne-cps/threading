@@ -105,6 +105,21 @@ class TestTaskGroup : public Ariadne::Testing::ContextFixture {
         ARIADNE_TESTING_EXPECT_EQUAL(finished.load(),2);
     }
 
+    void test_ticket_acquisition_race() {
+        ThreadPool pool(2);
+        std::atomic<int> executions{0};
+        for (unsigned i=0; i<256; ++i) {
+            TaskGroup group(pool);
+            auto child=group.fork([&executions] {
+                return executions.fetch_add(1)+1;
+            });
+            ARIADNE_TESTING_EXPECT_EQUAL(child.get(),static_cast<int>(i+1));
+            group.join();
+        }
+        ARIADNE_TESTING_EXPECT_EQUAL(executions.load(),256);
+        ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
+    }
+
     void test_destructor_joins() {
         ThreadPool pool(1);
         std::atomic<bool> completed{false};
@@ -174,6 +189,7 @@ int main(int argc, char** argv) {
     ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_deep_recursive_fork_join);
     ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_parallel_forks);
     ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_join_drains_after_exception);
+    ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_ticket_acquisition_race);
     ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_destructor_joins);
     ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_void_handle);
     ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_thread_manager_sequential_mode);

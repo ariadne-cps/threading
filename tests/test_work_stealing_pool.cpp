@@ -105,6 +105,21 @@ class TestWorkStealingPool : public Ariadne::Testing::ContextFixture {
         ARIADNE_TESTING_EXPECT_EQUAL(count.load(),2);
     }
 
+    void test_ticket_acquisition_race() {
+        WorkStealingPool pool(2);
+        std::atomic<int> executions{0};
+        for (unsigned i=0; i<256; ++i) {
+            TaskGroup group(pool);
+            auto child=group.fork([&executions] {
+                return executions.fetch_add(1)+1;
+            });
+            ARIADNE_TESTING_EXPECT_EQUAL(child.get(),static_cast<int>(i+1));
+            group.join();
+        }
+        ARIADNE_TESTING_EXPECT_EQUAL(executions.load(),256);
+        ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
+    }
+
     void test_destructor_drains() {
         std::atomic<int> completed{0};
         {
@@ -148,6 +163,7 @@ int main(int argc,char** argv) {
     ARIADNE_TESTING_ADD_TEST(TestWorkStealingPool,test_multiple_forks_preserve_results);
     ARIADNE_TESTING_ADD_TEST(TestWorkStealingPool,test_steal_from_busy_worker);
     ARIADNE_TESTING_ADD_TEST(TestWorkStealingPool,test_join_waits_for_all_after_exception);
+    ARIADNE_TESTING_ADD_TEST(TestWorkStealingPool,test_ticket_acquisition_race);
     ARIADNE_TESTING_ADD_TEST(TestWorkStealingPool,test_destructor_drains);
     ARIADNE_TESTING_ADD_TEST(TestWorkStealingPool,test_zero_worker_destructor_drains_descendants);
     ARIADNE_TESTING_ADD_TEST(TestWorkStealingPool,test_local_helping_while_joining);
