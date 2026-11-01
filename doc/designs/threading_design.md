@@ -63,3 +63,35 @@ TaskGroup destructor cannot cancel stalled user tasks; it always joins. With zer
 tests/test_task_group.cpp validates helping and structured joins. tests/test_work_stealing_pool.cpp checks external submission, nested recursion with one worker, value propagation, cooperative stealing, exception draining and safe shutdown, including zero-worker descendants. Tests use the Ariadne Testing suite macros.
 
 Work stealing here is based on mutex-protected deques and scans, not a lock-free algorithm. Benchmarking and scheduler fairness improvements are separate future optimizations; the initial priority is correct task conservation, exception handling and termination.
+
+## Reproducible performance comparison
+
+`benchmarks/benchmark_thread_pool.cpp` compares the resizable FIFO
+`ThreadPool` with the fixed-size `WorkStealingPool` under identical loads.
+Both use the same `TaskGroup` and `TaskHandle` API.
+
+- `flat`: many independent integer-mixing tasks, submitted by the caller.
+- `recursive`: a binary fork/join tree, forking one child and computing the
+  other locally, so helping waits and local scheduling are exercised.
+- Both pools are constructed outside the timed region; their worker count,
+  inputs and work per task are identical.
+- The result of every timed iteration is compared to the same sequential
+  reference checksum *after* the timer has stopped.
+- One warm-up pair is discarded; measured pairs alternate execution order
+  and the reported statistic is the median of an odd number of samples.
+- The ratio is FIFO time divided by stealing time. Values above one indicate
+  that stealing was faster for the given workload and machine.
+
+The benchmark extends the existing `ThreadingCommandLineInterface`, with
+the standard logging options. The inherited `-c`/`--concurrency` selects
+the number of dedicated workers for each compared pool. The configured
+global `ThreadManager` is returned to concurrency zero before measuring
+so it does not retain unused workers competing for CPU time. When `-c` is
+omitted, the default is min(4, max(1, hardware_concurrency)).
+`--tasks`, `--work`, `--depth`, `--samples` and `--mode` select the workload.
+
+These numbers measure microbenchmark throughput and nested-task execution,
+not scheduler startup, fairness, end-to-end application costs or general
+scalability. They depend on system load, CPU topology, compiler flags and
+worker count. Do not interpret a single result as a universal performance
+advantage for either scheduler.

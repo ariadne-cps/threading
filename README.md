@@ -47,9 +47,9 @@ A C++20 compiler, CMake and pthread support are required.
 
 ## Tests
 
-All eight CTest executables use [Ariadne Testing](https://github.com/ariadne-cps/testing),
+All ten CTest executables use [Ariadne Testing](https://github.com/ariadne-cps/testing),
 pinned in `ss/tst` and linked only to test targets. The suite contains
-83 independently reported cases, preserving the original test order,
+100 independently reported cases, preserving the original test order,
 expected exceptions, smoke operations and concurrency scenarios.
 The CTest command uses `--concise`, while direct execution defaults to full diagnostics.
 
@@ -61,6 +61,28 @@ cmake --build build-debug --parallel --target tests
 ctest --test-dir build-debug --output-on-failure
 ```
 
+## Benchmark
+
+Build the standalone benchmark (outside CTest) in Release mode:
+
+```bash
+cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release
+cmake --build build-release --parallel --target benchmark_thread_pool
+./build-release/benchmarks/benchmark_thread_pool --concurrency 4 --tasks 4096 --work 128 --depth 9 --samples 9
+```
+
+The command line extends `ThreadingCommandLineInterface`, including logging
+scheduler, theme, verbosity and `-c`/`--concurrency` options. The concurrency
+option selects the number of workers in **each** compared pool (including zero).
+The global ThreadManager is reset to zero before timing, to avoid competing
+background worker threads. Without the option, up to four workers are used.
+`--mode flat|recursive|both` chooses the scenarios; `--help` lists the options.
+
+Both schedulers run identical work and verify their results against a
+deterministic reference checksum. The benchmark discards a warm-up pair,
+alternates pool execution order and reports median milliseconds and ratios.
+Pool construction is excluded from timing, and benchmarks are not CTest gates.
+See [threading_design.md](doc/designs/threading_design.md) for the methodology.
 ## Coverage
 
 Configure a separate Debug build with coverage enabled:

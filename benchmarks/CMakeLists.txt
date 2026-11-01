@@ -1,0 +1,3 @@
+add_executable(benchmark_thread_pool benchmark_thread_pool.cpp)
+target_link_libraries(benchmark_thread_pool PRIVATE ariadne-threading threading)
+add_dependencies(benchmarks benchmark_thread_pool)
