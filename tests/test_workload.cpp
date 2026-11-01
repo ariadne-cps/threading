@@ -254,7 +254,7 @@ class TestWorkload : public Ariadne::Testing::ContextFixture {
 
 
     void test_concurrent_logger_level_increase() {
-        if (ThreadManager::instance().maximum_concurrency() == 0) return;
+        if (ThreadManager::instance().maximum_concurrency() == 0) { ctx().skip("requires at least one hardware thread"); return; }
 
         ThreadManager::instance().set_concurrency(0);
         Logger::instance().configuration().set_verbosity(0);
@@ -273,7 +273,7 @@ class TestWorkload : public Ariadne::Testing::ContextFixture {
 
 
     void test_concurrent_logger_level_decrease() {
-        if (ThreadManager::instance().maximum_concurrency() == 0) return;
+        if (ThreadManager::instance().maximum_concurrency() == 0) { ctx().skip("requires at least one hardware thread"); return; }
 
         ThreadManager::instance().set_concurrency(0);
         Logger::instance().configuration().set_verbosity(0);
@@ -303,7 +303,7 @@ class TestWorkload : public Ariadne::Testing::ContextFixture {
     }
 
     void test_progress_acknowledgement_is_serialised() {
-        if (ThreadManager::instance().maximum_concurrency() < 2) return;
+        if (ThreadManager::instance().maximum_concurrency() < 2) { ctx().skip("requires at least two hardware threads"); return; }
         ThreadManager::instance().set_concurrency(2);
         Logger::instance().configuration().set_verbosity(2);
         auto state = std::make_shared<ProgressConcurrencyState>();
@@ -330,7 +330,7 @@ class TestWorkload : public Ariadne::Testing::ContextFixture {
 
 
     void test_multiple_concurrent_exceptions_preserve_first() {
-        if (ThreadManager::instance().maximum_concurrency() < 2) return;
+        if (ThreadManager::instance().maximum_concurrency() < 2) { ctx().skip("requires at least two hardware threads"); return; }
         ThreadManager::instance().set_concurrency(2);
 
         auto state = std::make_shared<ConcurrentDoubleExceptionState>();
@@ -342,7 +342,7 @@ class TestWorkload : public Ariadne::Testing::ContextFixture {
     }
 
     void test_concurrent_exception_waits_for_running_tasks() {
-        if (ThreadManager::instance().maximum_concurrency() < 2) return;
+        if (ThreadManager::instance().maximum_concurrency() < 2) { ctx().skip("requires at least two hardware threads"); return; }
         ThreadManager::instance().set_concurrency(2);
         auto state = std::make_shared<ConcurrentExceptionState>();
         StaticWorkload<int,std::shared_ptr<ConcurrentExceptionState>> wl(&throw_while_other_task_runs, state);
@@ -365,7 +365,7 @@ class TestWorkload : public Ariadne::Testing::ContextFixture {
     }
 
     void test_reuse_after_concurrent_exception() {
-        if (ThreadManager::instance().maximum_concurrency() == 0) return;
+        if (ThreadManager::instance().maximum_concurrency() == 0) { ctx().skip("requires at least one hardware thread"); return; }
         ThreadManager::instance().set_concurrency(1);
         auto first = std::make_shared<std::atomic<bool>>(true);
         auto total = std::make_shared<std::atomic<int>>(0);

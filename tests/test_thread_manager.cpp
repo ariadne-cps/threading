@@ -74,7 +74,7 @@ class TestThreadManager : public Ariadne::Testing::ContextFixture {
     }
 
     void test_concurrency_read_during_shrink() {
-        if (ThreadManager::instance().maximum_concurrency() < 2) return;
+        if (ThreadManager::instance().maximum_concurrency() < 2) { ctx().skip("requires at least two hardware threads"); return; }
         ThreadManager::instance().set_concurrency(2);
         std::atomic<bool> task_started = false;
         std::atomic<bool> allow_read = false;
@@ -103,7 +103,7 @@ class TestThreadManager : public Ariadne::Testing::ContextFixture {
 
 
     void test_thread_registry_during_shrink_to_zero() {
-        if (ThreadManager::instance().maximum_concurrency() == 0) return;
+        if (ThreadManager::instance().maximum_concurrency() == 0) { ctx().skip("requires at least one hardware thread"); return; }
         ThreadManager::instance().set_concurrency(1);
         std::atomic<bool> task_started = false;
         std::atomic<bool> allow_finish = false;
@@ -129,7 +129,7 @@ class TestThreadManager : public Ariadne::Testing::ContextFixture {
 
 
     void test_worker_cannot_shrink_manager() {
-        if (ThreadManager::instance().maximum_concurrency() == 0) return;
+        if (ThreadManager::instance().maximum_concurrency() == 0) { ctx().skip("requires at least one hardware thread"); return; }
         ThreadManager::instance().set_concurrency(1);
         auto future = ThreadManager::instance().enqueue(VoidFunction([] {
             ThreadManager::instance().set_concurrency(0);
