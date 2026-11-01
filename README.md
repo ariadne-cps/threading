@@ -20,7 +20,11 @@ A small C++20 library for thread management, thread pools, buffered workers and 
 - Structured fork/join via `TaskGroup` and `TaskHandle`, using cooperative
   waits to execute pending work from the same scheduler. Task groups join
   outstanding tasks on scope exit and propagate exceptions on explicit join.
-  Work stealing is not part of this first fork/join implementation.
+- `WorkStealingPool`: fixed-size scheduler with local LIFO queues, external
+  FIFO submission and FIFO stealing by idle workers. Its API is compatible
+  with `TaskGroup`, including zero-worker cooperative execution. See
+  [the concurrency design](doc/designs/threading_design.md) for guarantees,
+  lifecycle constraints and examples.
 - Coverage support on Ubuntu/GCC and macOS/AppleClang.
 
 ## Command-line interface
