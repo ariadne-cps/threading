@@ -46,11 +46,9 @@ ThreadPool::ThreadPool(size_t workers,String name,SchedulingPolicy policy)
 }
 
 ThreadPool::~ThreadPool() noexcept {
-    {
-        std::lock_guard<std::mutex> lock(_state_mutex);
-        _stopping=true;
-    }
-    _availability.notify_all();
+    _activity.fetch_or(stopping_bit,std::memory_order_acq_rel);
+    _epoch.fetch_add(1,std::memory_order_release);
+    _epoch.notify_all();
     if(_workers.empty()) {
         // Tasks may submit further tasks while the zero-worker pool drains.
         while(try_run_one_task()) { }
@@ -81,12 +79,14 @@ void ThreadPool::set_num_threads(size_t number) {
     if(number<old) {
         // Historical ThreadPool shrink is a synchronization barrier:
         // drain existing queued and running tasks before retiring threads.
-        {
-            std::unique_lock<std::mutex> lock(_state_mutex);
-            _availability.wait(lock,[this] { return _outstanding==0; });
-            _desired_workers.store(number,std::memory_order_release);
+        while((_activity.load(std::memory_order_acquire)&~stopping_bit)!=0u) {
+            const size_t stamp=_epoch.load(std::memory_order_acquire);
+            if((_activity.load(std::memory_order_acquire)&~stopping_bit)!=0u)
+                _epoch.wait(stamp,std::memory_order_acquire);
         }
-        _availability.notify_all();
+        _desired_workers.store(number,std::memory_order_release);
+        _epoch.fetch_add(1,std::memory_order_release);
+        _epoch.notify_all();
         _workers.resize(number); // Retiring threads are joined here.
         {
             std::unique_lock<std::shared_mutex> lock(_topology_mutex);
@@ -110,7 +110,8 @@ void ThreadPool::set_num_threads(size_t number) {
             }
         } catch (...) {
             _desired_workers.store(old,std::memory_order_release);
-            _availability.notify_all();
+            _epoch.fetch_add(1,std::memory_order_release);
+            _epoch.notify_all();
             _workers.resize(old);
             {
                 std::unique_lock<std::shared_mutex> lock(_topology_mutex);
@@ -124,12 +125,20 @@ void ThreadPool::set_num_threads(size_t number) {
 
 ThreadPool::Ticket ThreadPool::_enqueue_task(VoidFunction task,bool tracked) {
     Ticket ticket=tracked ? std::make_shared<TaskTicket>() : Ticket{};
-    {
-        std::lock_guard<std::mutex> state_lock(_state_mutex);
-        // Already-running tasks may produce descendants during shutdown.
-        if(_stopping && _current.pool!=this)
+    // Reserve activity before making the queue entry visible: destruction
+    // must never mistake a submission in progress for an idle scheduler.
+    size_t observed=_activity.load(std::memory_order_acquire);
+    for(;;) {
+        if((observed&stopping_bit)!=0u && _current.pool!=this)
             throw StoppedThreadPoolException{};
-
+        if((observed&~stopping_bit)==stopping_bit-1u)
+            throw std::overflow_error("too many outstanding tasks");
+        if(_activity.compare_exchange_weak(observed,observed+1u,
+                                           std::memory_order_acq_rel,
+                                           std::memory_order_acquire))
+            break;
+    }
+    try {
         auto insert=[&](TaskQueue& queue,std::mutex& queue_mutex) {
             std::lock_guard<std::mutex> lock(queue_mutex);
             const auto it=queue.insert(queue.end(),QueuedTask{ticket,std::move(task)});
@@ -140,6 +149,7 @@ ThreadPool::Ticket ThreadPool::_enqueue_task(VoidFunction task,bool tracked) {
                 ticket->position=it;
                 ticket->pending=true;
             }
+            _pending.fetch_add(1,std::memory_order_release);
         };
         if(_policy==SchedulingPolicy::WorkStealing && _current.pool==this) {
             std::shared_lock<std::shared_mutex> topology_lock(_topology_mutex);
@@ -152,10 +162,14 @@ ThreadPool::Ticket ThreadPool::_enqueue_task(VoidFunction task,bool tracked) {
         } else {
             insert(_global,_global_mutex);
         }
-        ++_outstanding;
-        _pending.fetch_add(1,std::memory_order_release);
+    } catch (...) {
+        _activity.fetch_sub(1,std::memory_order_acq_rel);
+        _epoch.fetch_add(1,std::memory_order_release);
+        _epoch.notify_all();
+        throw;
     }
-    _availability.notify_all();
+    _epoch.fetch_add(1,std::memory_order_release);
+    _epoch.notify_all();
     return ticket;
 }
 
@@ -223,11 +237,9 @@ void ThreadPool::_execute(VoidFunction task) {
     try { task(); }
     catch (...) { }
     _current=previous;
-    {
-        std::lock_guard<std::mutex> lock(_state_mutex);
-        --_outstanding;
-    }
-    _availability.notify_all();
+    _activity.fetch_sub(1,std::memory_order_acq_rel);
+    _epoch.fetch_add(1,std::memory_order_release);
+    _epoch.notify_all();
 }
 
 bool ThreadPool::try_run_one_task() {
@@ -240,21 +252,20 @@ bool ThreadPool::try_run_one_task() {
 void ThreadPool::_worker_loop(size_t index) {
     const WorkerContext previous=_current;
     _current={this,index};
-    while(index<_desired_workers.load(std::memory_order_acquire)) {
+    for(;;) {
+        if(index>=_desired_workers.load(std::memory_order_acquire))break;
         VoidFunction task;
         if(_take(task,true)) {
             _execute(std::move(task));
             continue;
         }
-        std::unique_lock<std::mutex> lock(_state_mutex);
-        _availability.wait(lock,[this,index] {
-            return index>=_desired_workers.load(std::memory_order_acquire)
-                || _pending.load(std::memory_order_acquire)!=0
-                || (_stopping && _outstanding==0);
-        });
-        if((_stopping && _outstanding==0)
-           || index>=_desired_workers.load(std::memory_order_acquire))
+        const size_t stamp=_epoch.load(std::memory_order_acquire);
+        if(index>=_desired_workers.load(std::memory_order_acquire))break;
+        const size_t activity=_activity.load(std::memory_order_acquire);
+        if((activity&stopping_bit)!=0u && (activity&~stopping_bit)==0u)
             break;
+        if(_pending.load(std::memory_order_acquire)!=0u)continue;
+        _epoch.wait(stamp,std::memory_order_acquire);
     }
     _current=previous;
 }

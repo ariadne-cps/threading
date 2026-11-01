@@ -156,3 +156,8 @@ advantage for either scheduler.
 ## Unified scheduler
 
 `ThreadPool` selects immutable `SchedulingPolicy::FIFO` (default) or `SchedulingPolicy::WorkStealing` at construction. Both policies share tickets, execution, shutdown, cooperative helping and worker management. The separate `WorkStealingPool` class is removed intentionally. `ThreadManager::set_concurrency()` remains an administrative configuration operation for the process-wide pool, not a nested task budget; algorithms control fork granularity and share the same scheduler.
+
+
+## Atomic activity coordination
+
+A single `_activity` atomic combines a stop flag and an outstanding task count. Submission reserves activity before inserting into a physical queue, rolling back on insertion failure. Once shutdown is flagged, external submissions are rejected but existing tasks can submit descendants. Finishing a task decrements activity. An atomic wake-up generation (`_epoch`) replaces the shared state mutex on the per-task hot path. Queue mutexes continue to protect ticket handles and exact-once extraction; work-stealing's topology lock remains separate. Resizing is still administrative and may wait until outstanding work drains.

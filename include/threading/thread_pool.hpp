@@ -29,7 +29,6 @@
 #define THREADING_THREAD_POOL_HPP
 
 #include <atomic>
-#include <condition_variable>
 #include <cstddef>
 #include <functional>
 #include <future>
@@ -144,12 +143,13 @@ class ThreadPool {
     // Shared reads allow parallel queue operations; resize is exclusive.
     mutable std::shared_mutex _topology_mutex;
     mutable std::mutex _resize_mutex;
-    mutable std::mutex _state_mutex;
-    std::condition_variable _availability;
     std::atomic<size_t> _pending{0};
     std::atomic<size_t> _desired_workers{0};
-    size_t _outstanding{0}; // Protected by _state_mutex.
-    bool _stopping{false};  // Protected by _state_mutex.
+    // The upper bit closes external submission; low bits count outstanding
+    // tasks, including reservations that are not yet in a queue.
+    static constexpr size_t stopping_bit=size_t{1} << (sizeof(size_t)*8u-1u);
+    std::atomic<size_t> _activity{0};
+    std::atomic<size_t> _epoch{0}; // Atomic wait/notify wake-up generation.
 };
 
 template<class F,class... AS>
