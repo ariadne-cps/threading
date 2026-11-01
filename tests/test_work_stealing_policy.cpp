@@ -25,6 +25,33 @@ class TestWorkStealingPolicy : public Ariadne::Testing::ContextFixture {
   public:
     using ContextFixture::ContextFixture;
 
+    void test_concurrent_submission_and_exact_once() {
+        // Concurrent producers exercise admission reservations, queue
+        // publication and worker wakeups for both scheduling policies.
+        for (auto policy : {SchedulingPolicy::FIFO,SchedulingPolicy::WorkStealing}) {
+            ThreadPool pool(4,policy);
+            constexpr int producers=4;
+            constexpr int tasks_per_producer=256;
+            std::atomic<int> executed{0};
+            std::vector<std::thread> submitters;
+            submitters.reserve(producers);
+            for(int i=0;i<producers;++i) {
+                submitters.emplace_back([&pool,&executed] {
+                    std::vector<std::future<void>> futures;
+                    futures.reserve(tasks_per_producer);
+                    for(int j=0;j<tasks_per_producer;++j)
+                        futures.push_back(pool.enqueue([&executed] {
+                            executed.fetch_add(1,std::memory_order_relaxed);
+                        }));
+                    for(auto& future:futures)future.get();
+                });
+            }
+            for(auto& producer:submitters)producer.join();
+            ARIADNE_TESTING_EXPECT_EQUAL(executed.load(),producers*tasks_per_producer);
+            ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
+        }
+    }
+
     void test_zero_workers_help() {
         ThreadPool pool(0,SchedulingPolicy::WorkStealing);
         TaskGroup group(pool);
@@ -179,6 +206,7 @@ int main(int argc,char** argv) {
     (void)ThreadManager::instance();
     ARIADNE_TESTING_SUITE("work_stealing_policy");
     ARIADNE_TESTING_ADD_TEST(TestWorkStealingPolicy,test_zero_workers_help);
+    ARIADNE_TESTING_ADD_TEST(TestWorkStealingPolicy,test_concurrent_submission_and_exact_once);
     ARIADNE_TESTING_ADD_TEST(TestWorkStealingPolicy,test_worker_executes_external_submission);
     ARIADNE_TESTING_ADD_TEST(TestWorkStealingPolicy,test_recursive_fork_join_single_worker);
     ARIADNE_TESTING_ADD_TEST(TestWorkStealingPolicy,test_multiple_forks_preserve_results);
