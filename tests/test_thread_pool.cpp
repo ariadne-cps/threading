@@ -229,7 +229,7 @@ class TestSmartThreadPool : public Ariadne::Testing::ContextFixture {
             pool.set_num_threads(4);
         }
         pool.set_num_threads(0);
-        ARIADNE_TESTING_EXPECT_EQUAL(completed,320);
+        ARIADNE_TESTING_EXPECT_EQUAL(completed.load(),320);
     }
 
     void test_set_num_threads_to_zero_dynamically() {

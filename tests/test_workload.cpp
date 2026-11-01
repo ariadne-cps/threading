@@ -186,7 +186,7 @@ class TestWorkload : public Ariadne::Testing::ContextFixture {
         StaticWorkloadType wl(&sum_all, result);
         wl.append({2,7,-3,5,8,10,5,8});
         wl.process();
-        ARIADNE_TESTING_EXPECT_EQUAL(*result,42);
+        ARIADNE_TESTING_EXPECT_EQUAL(result->load(),42);
     }
 
     void test_concurrent_processing_dynamic() {
