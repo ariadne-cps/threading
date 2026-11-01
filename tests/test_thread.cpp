@@ -48,7 +48,7 @@ class TestThread : public Ariadne::Testing::ContextFixture {
     using ContextFixture::ContextFixture;
   public:
 
-    void test_create() const {
+    void test_create() {
         Thread thread1([]{}, "thr");
         ARIADNE_TESTING_EXPECT_NO_THROW(thread1.id());
         ARIADNE_TESTING_EXPECT_EQUAL(thread1.name(),"thr");
@@ -56,11 +56,11 @@ class TestThread : public Ariadne::Testing::ContextFixture {
         ARIADNE_TESTING_EXPECT_EQUAL(to_string(thread2.id()),thread2.name());
     }
 
-    void test_destroy_before_completion() const {
+    void test_destroy_before_completion() {
         Thread thread([] { std::this_thread::sleep_for(100ms); },"");
     }
 
-    void test_task() const {
+    void test_task() {
         std::atomic<int> a = 0;
         Thread thread([&a] { a++; });
         std::this_thread::sleep_for(10ms);
@@ -68,7 +68,7 @@ class TestThread : public Ariadne::Testing::ContextFixture {
         ARIADNE_TESTING_PROVE(thread.exception() == nullptr);
     }
 
-    void test_exception() const {
+    void test_exception() {
         Thread thread([] { throw std::exception(); });
         std::this_thread::sleep_for(10ms);
         ARIADNE_TESTING_PROVE(thread.exception() != nullptr);
@@ -76,7 +76,7 @@ class TestThread : public Ariadne::Testing::ContextFixture {
 
 
 
-    void test_destroy_inactive() const {
+    void test_destroy_inactive() {
         std::atomic<size_t> executions = 0;
         {
             Thread thread([&executions] { ++executions; },"inactive",false);
@@ -84,16 +84,16 @@ class TestThread : public Ariadne::Testing::ContextFixture {
         ARIADNE_TESTING_EXPECT_EQUAL(executions.load(),0);
     }
 
-    void test_concurrent_activate() const {
+    void test_concurrent_activate() {
         std::atomic<size_t> executions = 0;
         Thread thread([&executions] { ++executions; },"inactive",false);
         Thread first([&thread] { thread.activate(); },"activator1");
         Thread second([&thread] { thread.activate(); },"activator2");
         std::this_thread::sleep_for(10ms);
-        ARIADNE_TESTING_EXPECT_EQUAL(executions,1);
+        ARIADNE_TESTING_EXPECT_EQUAL(executions.load(),1);
     }
 
-    void test_atomic_multiple_threads() const {
+    void test_atomic_multiple_threads() {
         size_t n_threads = 10*std::thread::hardware_concurrency();
         ARIADNE_TESTING_INSPECT("n_threads",n_threads);
         List<shared_ptr<Thread>> threads;
@@ -104,7 +104,7 @@ class TestThread : public Ariadne::Testing::ContextFixture {
         }
 
         std::this_thread::sleep_for(100ms);
-        ARIADNE_TESTING_EXPECT_EQUAL(a,n_threads);
+        ARIADNE_TESTING_EXPECT_EQUAL(a.load(),n_threads);
         threads.clear();
     }
 

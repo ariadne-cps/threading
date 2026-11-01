@@ -46,7 +46,7 @@ class TestSmartThreadPool : public Ariadne::Testing::ContextFixture {
     using ContextFixture::ContextFixture;
   public:
 
-    void test_construct_thread_name() const {
+    void test_construct_thread_name() {
         ARIADNE_TESTING_EXPECT_EQUAL(construct_thread_name("name",9,9),"name9");
         ARIADNE_TESTING_EXPECT_EQUAL(construct_thread_name("name",9,10),"name09");
         ARIADNE_TESTING_EXPECT_EQUAL(construct_thread_name("name",10,11),"name10");
@@ -159,7 +159,7 @@ class TestSmartThreadPool : public Ariadne::Testing::ContextFixture {
         ARIADNE_TESTING_EXPECT_EQUAL(actual_sum,expected_sum);
     }
 
-    void test_set_num_threads_up_statically() const {
+    void test_set_num_threads_up_statically() {
         ThreadPool pool(0);
         ARIADNE_TESTING_EXPECT_NO_THROW(pool.set_num_threads(1));
         ARIADNE_TESTING_EXPECT_EQUAL(pool.num_threads(),1);
@@ -167,19 +167,19 @@ class TestSmartThreadPool : public Ariadne::Testing::ContextFixture {
         ARIADNE_TESTING_EXPECT_EQUAL(pool.num_threads(),3);
     }
 
-    void test_set_num_threads_same_statically() const {
+    void test_set_num_threads_same_statically() {
         ThreadPool pool(3);
         ARIADNE_TESTING_EXPECT_NO_THROW(pool.set_num_threads(3));
         ARIADNE_TESTING_EXPECT_EQUAL(pool.num_threads(),3);
     }
 
-    void test_set_num_threads_down_statically() const {
+    void test_set_num_threads_down_statically() {
         ThreadPool pool(3);
         ARIADNE_TESTING_EXPECT_NO_THROW(pool.set_num_threads(1));
         ARIADNE_TESTING_EXPECT_EQUAL(pool.num_threads(),1);
     }
 
-    void test_set_num_threads_up_dynamically() const {
+    void test_set_num_threads_up_dynamically() {
         ThreadPool pool(0);
         auto first = pool.enqueue([]{});
         ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),1);
@@ -196,7 +196,7 @@ class TestSmartThreadPool : public Ariadne::Testing::ContextFixture {
         third.get();
     }
 
-    void test_set_num_threads_down_dynamically() const {
+    void test_set_num_threads_down_dynamically() {
         ThreadPool pool(3);
         VoidFunction fn([] { std::this_thread::sleep_for(100ms); });
         std::vector<future<void>> futures;
@@ -219,7 +219,7 @@ class TestSmartThreadPool : public Ariadne::Testing::ContextFixture {
         ARIADNE_TESTING_EXPECT_EQUAL(pool.num_threads(),2);
     }
 
-    void test_resize_repeatedly() const {
+    void test_resize_repeatedly() {
         ThreadPool pool(4);
         std::atomic<size_t> completed = 0;
         for (size_t round=0; round<20; ++round) {
@@ -232,7 +232,7 @@ class TestSmartThreadPool : public Ariadne::Testing::ContextFixture {
         ARIADNE_TESTING_EXPECT_EQUAL(completed,320);
     }
 
-    void test_set_num_threads_to_zero_dynamically() const {
+    void test_set_num_threads_to_zero_dynamically() {
         ThreadPool pool(3);
         std::atomic<size_t> running_started = 0;
         std::atomic<bool> release_running = false;
