@@ -105,6 +105,26 @@ class TestWorkStealingPool : public Ariadne::Testing::ContextFixture {
         ARIADNE_TESTING_EXPECT_EQUAL(count.load(),2);
     }
 
+    void test_ticket_queue_churn() {
+        WorkStealingPool pool(0);
+        std::atomic<int> executed{0};
+        std::vector<size_t> tickets;
+        tickets.reserve(1024);
+        for (size_t i=0;i<1024;++i) {
+            tickets.push_back(pool.enqueue_ticket([&executed] { ++executed; }));
+        }
+        // Remove alternating tickets out of FIFO order, forcing iterator
+        // maintenance while other tickets remain in the queue.
+        for (size_t i=1;i<tickets.size();i+=2)
+            ARIADNE_TESTING_PROVE(pool.try_run_task(tickets[i]));
+        for (size_t i=0;i<tickets.size();i+=2)
+            ARIADNE_TESTING_PROVE(pool.try_run_task(tickets[i]));
+        ARIADNE_TESTING_EXPECT_EQUAL(executed.load(),1024);
+        ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
+        for (size_t ticket : tickets)
+            ARIADNE_TESTING_PROVE(!pool.try_run_task(ticket));
+    }
+
     void test_ticket_acquisition_race() {
         WorkStealingPool pool(2);
         std::atomic<int> executions{0};
@@ -164,6 +184,7 @@ int main(int argc,char** argv) {
     ARIADNE_TESTING_ADD_TEST(TestWorkStealingPool,test_steal_from_busy_worker);
     ARIADNE_TESTING_ADD_TEST(TestWorkStealingPool,test_join_waits_for_all_after_exception);
     ARIADNE_TESTING_ADD_TEST(TestWorkStealingPool,test_ticket_acquisition_race);
+    ARIADNE_TESTING_ADD_TEST(TestWorkStealingPool,test_ticket_queue_churn);
     ARIADNE_TESTING_ADD_TEST(TestWorkStealingPool,test_destructor_drains);
     ARIADNE_TESTING_ADD_TEST(TestWorkStealingPool,test_zero_worker_destructor_drains_descendants);
     ARIADNE_TESTING_ADD_TEST(TestWorkStealingPool,test_local_helping_while_joining);

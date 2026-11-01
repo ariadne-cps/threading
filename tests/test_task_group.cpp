@@ -27,6 +27,7 @@
 #include <functional>
 #include <stdexcept>
 #include <thread>
+#include <vector>
 
 using namespace Ariadne;
 
@@ -103,6 +104,26 @@ class TestTaskGroup : public Ariadne::Testing::ContextFixture {
         group.fork([&] { ++finished; });
         ARIADNE_TESTING_EXPECT_EXCEPTION(group.join());
         ARIADNE_TESTING_EXPECT_EQUAL(finished.load(),2);
+    }
+
+    void test_ticket_queue_churn() {
+        ThreadPool pool(0);
+        std::atomic<int> executed{0};
+        std::vector<size_t> tickets;
+        tickets.reserve(1024);
+        for (size_t i=0;i<1024;++i) {
+            tickets.push_back(pool.enqueue_ticket([&executed] { ++executed; }));
+        }
+        // Remove alternating tickets out of FIFO order, forcing iterator
+        // maintenance while other tickets remain in the queue.
+        for (size_t i=1;i<tickets.size();i+=2)
+            ARIADNE_TESTING_PROVE(pool.try_run_task(tickets[i]));
+        for (size_t i=0;i<tickets.size();i+=2)
+            ARIADNE_TESTING_PROVE(pool.try_run_task(tickets[i]));
+        ARIADNE_TESTING_EXPECT_EQUAL(executed.load(),1024);
+        ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
+        for (size_t ticket : tickets)
+            ARIADNE_TESTING_PROVE(!pool.try_run_task(ticket));
     }
 
     void test_ticket_acquisition_race() {
@@ -190,6 +211,7 @@ int main(int argc, char** argv) {
     ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_parallel_forks);
     ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_join_drains_after_exception);
     ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_ticket_acquisition_race);
+    ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_ticket_queue_churn);
     ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_destructor_joins);
     ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_void_handle);
     ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_thread_manager_sequential_mode);
