@@ -34,12 +34,34 @@ String construct_thread_name(String prefix, size_t number, size_t max_number) {
     return ss.str();
 }
 
-void ThreadPool::_enqueue_task(VoidFunction task) {
+size_t ThreadPool::_enqueue_task(VoidFunction task, bool tracked) {
+    size_t ticket=0;
     {
         lock_guard<mutex> lock(_task_availability_mutex);
-        _tasks.emplace_back(std::move(task));
+        if (tracked) ticket=_next_ticket++;
+        _tasks.push_back(QueuedTask{ticket,std::move(task)});
     }
     _task_availability_condition.notify_one();
+    return ticket;
+}
+
+size_t ThreadPool::enqueue_ticket(VoidFunction task) {
+    return _enqueue_task(std::move(task),true);
+}
+
+bool ThreadPool::try_run_task(size_t ticket) {
+    if (ticket==0) return false;
+    VoidFunction task;
+    {
+        lock_guard<mutex> lock(_task_availability_mutex);
+        auto it=std::find_if(_tasks.begin(),_tasks.end(),
+            [ticket](QueuedTask const& entry) { return entry.ticket==ticket; });
+        if (it==_tasks.end()) return false;
+        task=std::move(it->function);
+        _tasks.erase(it);
+    }
+    task();
+    return true;
 }
 
 VoidFunction ThreadPool::_task_wrapper_function(size_t i) {
@@ -57,7 +79,7 @@ VoidFunction ThreadPool::_task_wrapper_function(size_t i) {
                     if (_num_active_threads == _num_threads_to_use) _all_unused_threads_stopped_promise.set_value();
                     return;
                 }
-                task = std::move(_tasks.front());
+                task = std::move(_tasks.front().function);
                 _tasks.pop_front();
                 lock.unlock();
                 task();
@@ -123,7 +145,7 @@ bool ThreadPool::try_run_one_task() {
         if (_tasks.empty()) return false;
         // Helping must prefer recent descendants: taking the oldest
         // pending task causes unbounded breadth-first nesting in fork/join.
-        task = std::move(_tasks.back());
+        task = std::move(_tasks.back().function);
         _tasks.pop_back();
     }
     task();

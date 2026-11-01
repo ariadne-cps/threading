@@ -28,26 +28,25 @@ general fairness or completion-order guarantee.
 
 ## Targeted helping for structured dependencies
 
-A `TaskHandle` returned by `TaskGroup::fork()` first attempts to execute
-its **own pending task**, using a one-shot atomic claim shared with the pool's
-queued wrapper. If a worker has already claimed that task, the waiting thread
-waits for its completion instead of executing unrelated queued tasks and
-forming an arbitrarily deep chain of nested helping calls.
+A `TaskHandle` returned by `TaskGroup::fork()` may acquire its **own
+pending task** through the scheduler's ticket-based queue operations:
+`enqueue_ticket()` inserts the task into the normal queue, while
+`try_run_task(ticket)` removes that *same* task under the appropriate queue
+mutex and executes it using the scheduler's normal execution context. The
+ticket is an opaque scheduler-local identifier; zero denotes an already
+executed task in `ThreadManager`'s synchronous mode.
 
-This differs from generic `try_run_one_task()`: task-group handles prioritize
-the concrete dependency they are waiting for. It preserves the same result
-and exception propagation and guarantees at most one invocation of each
-user callable even when a pool worker races with the waiting thread.
+If a worker has already taken the task, targeted acquisition returns false,
+and the handle waits for that worker to finish. Mutual exclusion at dequeue
+ensures the task executes exactly once; there are no redundant no-op wrappers
+left in the queue. Work-stealing tasks still enter the appropriate local
+or shared queue, with all normal worker and thief choices preserved.
 
-An already claimed task's queued wrapper can remain until workers or an
-explicit helping call remove it. Such wrappers are no-ops; physical queue
-size can temporarily exceed the number of user callables yet to run.
-These extra queue entries are a first implementation tradeoff and may
-be optimized later. They must not be mistaken for tasks executed twice.
-
-This prevents unrelated queued sibling tasks from recursively extending the
-waiting thread's call stack. Arbitrary user recursion, cyclic dependencies
-or blocking operations can still exhaust a stack or deadlock.
+Unlike generic `try_run_one_task()`, targeted waits do not recurse through
+unrelated queued siblings. Arbitrary user recursion and cyclic dependencies
+can still exhaust a stack or deadlock. A ticket lookup currently scans its
+queue, which can cost linear time with many pending tasks; this should be
+measured before introducing more elaborate indexing.
 
 ## TaskGroup and TaskHandle
 

@@ -40,9 +40,7 @@ class TestTaskGroup : public Ariadne::Testing::ContextFixture {
         auto result = group.fork([] { return 21; });
         ARIADNE_TESTING_EXPECT_EQUAL(result.get(),21);
         group.join();
-        // A directly claimed task may leave a harmless queue wrapper; drain
-        // it explicitly before asserting the physical queue is empty.
-        while (pool.try_run_one_task()) { }
+        // Targeted acquisition removes the actual queue entry.
         ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
     }
 

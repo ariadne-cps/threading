@@ -25,7 +25,6 @@
 #ifndef THREADING_TASK_GROUP_HPP
 #define THREADING_TASK_GROUP_HPP
 
-#include <atomic>
 #include <chrono>
 #include <exception>
 #include <functional>
@@ -41,9 +40,9 @@
 namespace Ariadne {
 
 //! \brief Future-like result of a forked task, with cooperative waiting.
-//! \details A handle produced by TaskGroup may execute its own pending task
-//! once, rather than recursively helping arbitrary unrelated tasks. If another
-//! worker has claimed that task, it waits for that exact task to finish.
+//! \details A handle produced by TaskGroup may extract its own pending task
+//! from its scheduler's queue. Another worker can win the same dequeue race;
+//! in that case, the handle waits for that worker to finish the exact task.
 //! A handle built directly from a future retains generic scheduler helping.
 //! For non-void results, get() returns a const reference valid while the
 //! handle (or another owner of its shared future) is alive.
@@ -52,7 +51,7 @@ template<class Scheduler, class Result>
 class TaskHandle {
   public:
     TaskHandle(Scheduler& scheduler, std::shared_future<Result> future,
-               std::function<void()> try_execute = {})
+               std::function<bool()> try_execute = {})
         : _scheduler(&scheduler), _future(std::move(future)),
           _try_execute(std::move(try_execute)) { }
 
@@ -60,12 +59,11 @@ class TaskHandle {
     void wait() const {
         using namespace std::chrono_literals;
         if (_try_execute) {
-            // A fork/join dependency forms a DAG: claiming this exact child
-            // prevents unrelated queued siblings from building nested stacks.
+            // Remove and execute this exact dependency from the scheduler.
+            // A worker can win the dequeue race; then wait for its result.
+            // No redundant task wrapper remains in either scheduler's queue.
             if (_future.wait_for(0ms) != std::future_status::ready)
-                _try_execute();
-            // If another worker claimed it, wait for its result. Its own
-            // nested dependencies can likewise be executed directly.
+                (void)_try_execute();
             _future.wait();
             return;
         }
@@ -85,7 +83,7 @@ class TaskHandle {
   private:
     Scheduler* _scheduler;
     std::shared_future<Result> _future;
-    std::function<void()> _try_execute;
+    std::function<bool()> _try_execute;
 };
 
 //! \brief Group of forked tasks, joined even when the caller leaves by exception.
@@ -115,19 +113,16 @@ class TaskGroup {
         auto task = std::make_shared<std::packaged_task<Result()>>(
             std::forward<Callable>(callable));
         auto future = task->get_future().share();
-        auto claimed = std::make_shared<std::atomic<bool>>(false);
-        auto execute = [task, claimed] {
-            // Both a pool worker and the owning TaskHandle may race to
-            // execute this task. Exactly one can claim it.
-            if (not claimed->exchange(true, std::memory_order_acq_rel))
-                (*task)(); // packaged_task captures user exceptions.
-        };
-        TaskHandle<Scheduler, Result> handle(_scheduler, std::move(future), execute);
-        _joiners.emplace_back([handle] { static_cast<void>(handle.get()); });
+        // Ticket-based acquisition ensures that both a waiting handle and
+        // a worker use the scheduler's single physical queue entry.
+        const auto ticket=_scheduler.enqueue_ticket([task] { (*task)(); });
+        auto try_execute=[this,ticket] { return _scheduler.try_run_task(ticket); };
+        TaskHandle<Scheduler, Result> handle(_scheduler,std::move(future),try_execute);
         try {
-            (void)_scheduler.enqueue(execute);
+            _joiners.emplace_back([handle] { static_cast<void>(handle.get()); });
         } catch (...) {
-            _joiners.pop_back();
+            // A launched child must never outlive the owning scope on error.
+            handle.wait();
             throw;
         }
         return handle;

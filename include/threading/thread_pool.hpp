@@ -30,6 +30,7 @@
 #define THREADING_THREAD_POOL_HPP
 
 #include <deque>
+#include <algorithm>
 #include "logging/logging.hpp"
 #include "utility/container.hpp"
 #include "threading/thread.hpp"
@@ -69,6 +70,15 @@ class ThreadPool {
     //! \return True iff a pending task was taken and executed.
     bool try_run_one_task();
 
+    //! \brief Enqueue a tracked task, returning an opaque queue ticket.
+    //! \details A fork/join handle can reclaim this exact queued task.
+    //! This is an internal scheduling primitive; use TaskGroup for fork/join.
+    size_t enqueue_ticket(VoidFunction task);
+
+    //! \brief Extract and execute a particular still-queued task.
+    //! \return False if a worker or other helper already removed the task.
+    bool try_run_task(size_t ticket);
+
     //! \brief The size of the tasks queue
     size_t queue_size() const;
 
@@ -91,12 +101,17 @@ class ThreadPool {
     //! \brief Append threads in the given range
     void _append_thread_range(size_t lower, size_t upper);
     //! \brief Enqueue an already type-erased task
-    void _enqueue_task(VoidFunction task);
+    size_t _enqueue_task(VoidFunction task, bool tracked = false);
+    struct QueuedTask {
+        size_t ticket;
+        VoidFunction function;
+    };
 
   private:
     const String _name;
     List<shared_ptr<Thread>> _threads;
-    std::deque<VoidFunction> _tasks;
+    std::deque<QueuedTask> _tasks;
+    size_t _next_ticket{1}; // Guarded by _task_availability_mutex.
 
     mutable mutex _task_availability_mutex;
     condition_variable _task_availability_condition;

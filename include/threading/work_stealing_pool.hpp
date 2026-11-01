@@ -73,6 +73,15 @@ class WorkStealingPool {
         return future;
     }
 
+    //! \brief Enqueue a tracked task and return its queue ticket.
+    //! \details TaskGroup uses the ticket to take its own child from the
+    //! actual queue rather than executing a duplicate queue wrapper.
+    std::size_t enqueue_ticket(VoidFunction task);
+
+    //! \brief Extract and execute a specific queued task when still pending.
+    //! \return False if another worker or helper has already taken it.
+    bool try_run_task(std::size_t ticket);
+
     //! \brief Help execute one queued task on the calling thread.
     //! \details If called by a worker, attempts its own local work first,
     //! then global work, then steals from other workers. A non-worker
@@ -87,9 +96,13 @@ class WorkStealingPool {
     std::size_t queue_size() const noexcept;
 
   private:
+    struct QueuedTask {
+        std::size_t ticket;
+        VoidFunction function;
+    };
     struct LocalQueue {
         std::mutex mutex;
-        std::deque<VoidFunction> tasks;
+        std::deque<QueuedTask> tasks;
     };
     struct WorkerContext {
         WorkStealingPool* pool;
@@ -98,7 +111,9 @@ class WorkStealingPool {
     static thread_local WorkerContext _current;
     static constexpr std::size_t no_worker = static_cast<std::size_t>(-1);
 
-    void _enqueue(VoidFunction task);
+    std::size_t _enqueue(VoidFunction task, bool tracked = false);
+    bool _remove_ticket(std::deque<QueuedTask>& tasks,
+                        std::size_t ticket, VoidFunction& task);
     bool _take(VoidFunction& task);
     bool _take_local(std::size_t index, VoidFunction& task, bool steal);
     bool _take_global(VoidFunction& task);
@@ -106,13 +121,14 @@ class WorkStealingPool {
     void _worker_loop(std::size_t index);
 
     std::vector<std::unique_ptr<LocalQueue>> _locals;
-    std::deque<VoidFunction> _global;
+    std::deque<QueuedTask> _global;
     std::mutex _global_mutex;
     std::vector<std::shared_ptr<Thread>> _workers;
 
     std::mutex _state_mutex;
     std::condition_variable _availability;
     std::atomic<std::size_t> _pending{0};
+    std::size_t _next_ticket{1}; // Guarded by _state_mutex.
     std::size_t _outstanding{0}; // Guarded by _state_mutex.
     bool _stopping{false};       // Guarded by _state_mutex.
 };

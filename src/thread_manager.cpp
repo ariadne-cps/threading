@@ -56,6 +56,18 @@ bool ThreadManager::try_run_one_task() {
     return _pool.try_run_one_task();
 }
 
+size_t ThreadManager::enqueue_ticket(VoidFunction task) {
+    if (_concurrency.load()==0) {
+        task();
+        return 0;
+    }
+    return _pool.enqueue_ticket(std::move(task));
+}
+
+bool ThreadManager::try_run_task(size_t ticket) {
+    return _pool.try_run_task(ticket);
+}
+
 void ThreadManager::set_concurrency(size_t value) {
     ARIADNE_PRECONDITION(value <= _maximum_concurrency);
     lock_guard<mutex> lock(_concurrency_change_mutex);

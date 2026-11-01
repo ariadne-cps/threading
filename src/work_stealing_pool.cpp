@@ -23,6 +23,7 @@
 #include "threading/thread_manager.hpp"
 
 #include <string>
+#include <algorithm>
 
 namespace Ariadne {
 
@@ -75,32 +76,77 @@ std::size_t WorkStealingPool::queue_size() const noexcept {
     return _pending.load(std::memory_order_acquire);
 }
 
-void WorkStealingPool::_enqueue(VoidFunction task) {
+std::size_t WorkStealingPool::_enqueue(VoidFunction task, bool tracked) {
+    std::size_t ticket=0;
     {
         std::lock_guard<std::mutex> state_lock(_state_mutex);
         // Descendants of an already running task are allowed during drain.
         if (_stopping && _current.pool != this) {
             throw std::runtime_error("WorkStealingPool is stopping");
         }
+        if (tracked) ticket=_next_ticket++;
+        QueuedTask entry{ticket,std::move(task)};
         if (_current.pool == this && _current.index < _locals.size()) {
             auto& local = *_locals[_current.index];
             std::lock_guard<std::mutex> lock(local.mutex);
-            local.tasks.push_back(std::move(task));
+            local.tasks.push_back(std::move(entry));
         } else {
             std::lock_guard<std::mutex> lock(_global_mutex);
-            _global.push_back(std::move(task));
+            _global.push_back(std::move(entry));
         }
         ++_outstanding;
         _pending.fetch_add(1,std::memory_order_release);
     }
     // All idle workers may need to steal from the newly populated local queue.
     _availability.notify_all();
+    return ticket;
+}
+
+std::size_t WorkStealingPool::enqueue_ticket(VoidFunction task) {
+    return _enqueue(std::move(task),true);
+}
+
+bool WorkStealingPool::_remove_ticket(std::deque<QueuedTask>& queue,
+                                      std::size_t ticket, VoidFunction& task) {
+    auto it=std::find_if(queue.begin(),queue.end(),
+        [ticket](QueuedTask const& entry){return entry.ticket==ticket;});
+    if (it==queue.end()) return false;
+    task=std::move(it->function);
+    queue.erase(it);
+    _pending.fetch_sub(1,std::memory_order_acq_rel);
+    return true;
+}
+
+bool WorkStealingPool::try_run_task(std::size_t ticket) {
+    if (ticket==0) return false;
+    VoidFunction task;
+    // The global and local queues are independent. Each is locked while
+    // searching, so a queued child is acquired by exactly one executor.
+    {
+        std::lock_guard<std::mutex> lock(_global_mutex);
+        if (_remove_ticket(_global,ticket,task)) {
+            _execute(std::move(task));
+            return true;
+        }
+    }
+    for (auto const& queue : _locals) {
+        bool found=false;
+        {
+            std::lock_guard<std::mutex> lock(queue->mutex);
+            found=_remove_ticket(queue->tasks,ticket,task);
+        }
+        if (found) {
+            _execute(std::move(task));
+            return true;
+        }
+    }
+    return false;
 }
 
 bool WorkStealingPool::_take_global(VoidFunction& task) {
     std::lock_guard<std::mutex> lock(_global_mutex);
     if (_global.empty()) return false;
-    task = std::move(_global.front());
+    task = std::move(_global.front().function);
     _global.pop_front();
     _pending.fetch_sub(1,std::memory_order_acq_rel);
     return true;
@@ -111,10 +157,10 @@ bool WorkStealingPool::_take_local(std::size_t index, VoidFunction& task, bool s
     std::lock_guard<std::mutex> lock(queue.mutex);
     if (queue.tasks.empty()) return false;
     if (steal) {
-        task = std::move(queue.tasks.front());
+        task = std::move(queue.tasks.front().function);
         queue.tasks.pop_front();
     } else {
-        task = std::move(queue.tasks.back());
+        task = std::move(queue.tasks.back().function);
         queue.tasks.pop_back();
     }
     _pending.fetch_sub(1,std::memory_order_acq_rel);

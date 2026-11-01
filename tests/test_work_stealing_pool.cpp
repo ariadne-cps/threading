@@ -32,8 +32,7 @@ class TestWorkStealingPool : public Ariadne::Testing::ContextFixture {
         ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{1});
         ARIADNE_TESTING_EXPECT_EQUAL(value.get(),42);
         group.join();
-        // Drain any no-op queue wrapper left by direct child execution.
-        while (pool.try_run_one_task()) { }
+        // Targeted acquisition removes the actual queue entry.
         ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
     }
 
