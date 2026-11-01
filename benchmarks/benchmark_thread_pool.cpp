@@ -49,6 +49,7 @@ struct Options {
     unsigned depth = 9u;
     unsigned samples = 9u;
     std::string mode = "both";
+    bool sweep = false;
 };
 
 template<class UInt>
@@ -105,6 +106,9 @@ List<ArgumentParser> benchmark_parsers(Options& options) {
                 throw std::invalid_argument("invalid mode");
             return [&options,mode] { options.mode=mode; };
         }));
+    parsers.append(make_unvalued_argument_parser(
+        "","sweep","Compare 1,2,4,8 workers x work=16,128,1024",
+        [&options] { options.sweep=true; }));
     return parsers;
 }
 
@@ -181,63 +185,127 @@ double timed_sample(F&& compute,std::uint64_t reference) {
     return std::chrono::duration<double,std::milli>(finish-start).count();
 }
 
-double median(std::vector<double> times) {
-    std::sort(times.begin(),times.end());
-    return times[times.size()/2u];
+double median(std::vector<double> values) {
+    if(values.empty())throw std::runtime_error("empty timing collection");
+    std::sort(values.begin(),values.end());
+    return values[values.size()/2u];
 }
 
-struct Comparison { double fifo_ms; double steal_ms; };
+struct Statistics {
+    double median_ms;
+    double minimum_ms;
+    double maximum_ms;
+    double mad_ms;
+};
 
-Comparison compare(std::string const& mode,Options const& options,unsigned workers) {
-    // The same number of workers, tasks and computations for each scheduler.
-    // Construct both pools outside all timed samples.
-    // Every forked task now leaves its physical scheduler queue exactly once.
-    ThreadPool fifo(workers);
-    WorkStealingPool stealing(workers);
-    const std::uint64_t reference=(mode=="flat")
-        ?flat_reference(options.tasks,options.work)
-        :recursive_reference(options.depth,left_tag,options.work);
+Statistics statistics(std::vector<double> const& values) {
+    if(values.empty())throw std::runtime_error("no benchmark samples");
+    for(double value:values)
+        if(!(std::isfinite(value) && value>0.0))
+            throw std::runtime_error("nonpositive or nonfinite sample");
+    const double middle=median(values);
+    std::vector<double> deviations;
+    deviations.reserve(values.size());
+    for(double value:values)deviations.push_back(std::abs(value-middle));
+    const auto bounds=std::minmax_element(values.begin(),values.end());
+    return {middle,*bounds.first,*bounds.second,median(std::move(deviations))};
+}
 
-    auto run=[&](auto& scheduler)->std::uint64_t {
+struct Comparison {
+    Statistics fifo;
+    Statistics stealing;
+    Statistics paired_ratio;
+};
+
+// Construct exactly one pool at a time, keeping all other pool workers
+// absent. Worker startup, a complete warm-up and destruction are excluded
+// from the clock. Every measured sample uses a freshly warmed pool.
+template<class Scheduler>
+double measure_pool(std::string const& mode, Options const& options,
+                    unsigned workers, std::uint64_t reference) {
+    Scheduler scheduler(workers);
+    auto run=[&]() -> std::uint64_t {
         if(mode=="flat")return flat_run(scheduler,options.tasks,options.work);
         return recursive_run(scheduler,options.depth,left_tag,options.work);
     };
-
-    std::vector<double> fifo_samples,stealing_samples;
-    fifo_samples.reserve(options.samples);
-    stealing_samples.reserve(options.samples);
-    // Sample zero warms both pools; alternate order to reduce fixed bias.
-    for(unsigned sample=0u;sample<=options.samples;++sample) {
-        double a=0.0,b=0.0;
-        if(sample%2u==0u) {
-            a=timed_sample([&] { return run(fifo); },reference);
-            b=timed_sample([&] { return run(stealing); },reference);
-        } else {
-            b=timed_sample([&] { return run(stealing); },reference);
-            a=timed_sample([&] { return run(fifo); },reference);
-        }
-        if(sample!=0u) {
-            fifo_samples.push_back(a);
-            stealing_samples.push_back(b);
-        }
-    }
-    return {median(std::move(fifo_samples)),median(std::move(stealing_samples))};
+    if(run()!=reference)
+        throw std::runtime_error("warm-up checksum mismatch");
+    if(scheduler.queue_size()!=0u)
+        throw std::runtime_error("warm-up left queued tasks");
+    const double elapsed=timed_sample(run,reference);
+    if(scheduler.queue_size()!=0u)
+        throw std::runtime_error("timed sample left queued tasks");
+    return elapsed;
 }
 
-void report(std::string const& workload,Comparison result) {
-    if(result.fifo_ms<=0.0 || result.steal_ms<=0.0 ||
-       !std::isfinite(result.fifo_ms) || !std::isfinite(result.steal_ms))
-        throw std::runtime_error("invalid timing measurement");
-    LOGGING_PRINTLN(std::left<<std::setw(14)<<workload
-        <<std::right<<std::setw(18)<<std::fixed<<std::setprecision(3)<<result.fifo_ms
-        <<std::setw(19)<<result.steal_ms
-        <<std::setw(18)<<result.fifo_ms/result.steal_ms<<"x")
+Comparison compare(std::string const& mode, Options const& options,
+                   unsigned workers) {
+    const auto reference=mode=="flat"
+        ? flat_reference(options.tasks,options.work)
+        : recursive_reference(options.depth,left_tag,options.work);
+    std::vector<double> fifo_samples,stealing_samples,paired;
+    fifo_samples.reserve(options.samples);
+    stealing_samples.reserve(options.samples);
+    paired.reserve(options.samples);
+
+    for(unsigned sample=0u;sample<options.samples;++sample) {
+        double fifo_ms=0.0,stealing_ms=0.0;
+        // Alternate the order of separately constructed, warmed pools.
+        if(sample%2u==0u) {
+            fifo_ms=measure_pool<ThreadPool>(mode,options,workers,reference);
+            stealing_ms=measure_pool<WorkStealingPool>(mode,options,workers,reference);
+        } else {
+            stealing_ms=measure_pool<WorkStealingPool>(mode,options,workers,reference);
+            fifo_ms=measure_pool<ThreadPool>(mode,options,workers,reference);
+        }
+        if(!(std::isfinite(fifo_ms) && std::isfinite(stealing_ms)
+             && fifo_ms>0.0 && stealing_ms>0.0))
+            throw std::runtime_error("invalid paired measurement");
+        fifo_samples.push_back(fifo_ms);
+        stealing_samples.push_back(stealing_ms);
+        paired.push_back(fifo_ms/stealing_ms);
+    }
+    return {statistics(fifo_samples),statistics(stealing_samples),
+            statistics(paired)};
+}
+
+void print_statistics(std::string const& label,Statistics const& values,
+                      std::string const& unit) {
+    LOGGING_PRINTLN(std::left<<std::setw(19)<<label<<std::right
+        <<std::fixed<<std::setprecision(3)
+        <<std::setw(13)<<values.median_ms
+        <<std::setw(13)<<values.minimum_ms
+        <<std::setw(13)<<values.maximum_ms
+        <<std::setw(13)<<values.mad_ms<<"  "<<unit)
+}
+
+void report(std::string const& mode,Options const& options,unsigned workers) {
+    auto times=compare(mode,options,workers);
+    LOGGING_PRINTLN(" ")
+    LOGGING_PRINTLN("Workload="<<mode<<" | workers="<<workers
+        <<" | work="<<options.work<<" | samples="<<options.samples)
+    LOGGING_PRINTLN(std::left<<std::setw(19)<<"Scheduler"
+        <<std::right<<std::setw(13)<<"Median"
+        <<std::setw(13)<<"Min"
+        <<std::setw(13)<<"Max"
+        <<std::setw(13)<<"MAD"<<"  Unit")
+    LOGGING_PRINTLN(std::string(81u,'-'))
+    print_statistics("ThreadPool",times.fifo,"ms");
+    print_statistics("WorkStealingPool",times.stealing,"ms");
+    print_statistics("Paired FIFO/steal",times.paired_ratio,"x");
 }
 
 bool has_concurrency_option(List<String> const& arguments) {
     return std::find(arguments.begin(),arguments.end(),String("--concurrency"))
                !=arguments.end()
         || std::find(arguments.begin(),arguments.end(),String("-c"))
+               !=arguments.end();
+}
+
+bool has_work_option(List<String> const& arguments) {
+    return std::find(arguments.begin(),arguments.end(),String("--work"))
+               !=arguments.end()
+        || std::find(arguments.begin(),arguments.end(),String("-w"))
                !=arguments.end();
 }
 
@@ -274,24 +342,37 @@ int main(int argc,const char* argv[]) {
             :std::min(4u,std::max(1u,std::thread::hardware_concurrency()));
         manager.set_concurrency(0);
 
-        LOGGING_PRINTLN("ThreadPool / WorkStealingPool benchmark")
-        LOGGING_PRINTLN("workers="<<workers<<"  tasks="<<options.tasks
-            <<"  work="<<options.work<<"  depth="<<options.depth
-            <<"  samples="<<options.samples)
-        LOGGING_PRINTLN(std::string(73u,'='))
-        LOGGING_PRINTLN(std::left<<std::setw(14)<<"Workload"
-            <<std::right<<std::setw(18)<<"ThreadPool (ms)"
-            <<std::setw(19)<<"Stealing (ms)"
-            <<std::setw(19)<<"FIFO/stealing")
-        LOGGING_PRINTLN(std::string(73u,'-'))
-        if(options.mode=="flat" || options.mode=="both")
-            report("flat",compare("flat",options,workers));
-        if(options.mode=="recursive" || options.mode=="both")
-            report("recursive",compare("recursive",options,workers));
-        LOGGING_PRINTLN(std::string(73u,'='))
-        LOGGING_PRINTLN("Ratio > 1 means the work-stealing pool was faster.")
-        LOGGING_PRINTLN("Median elapsed milliseconds after one warm-up; "
-                        "worker startup excluded; all checksums verified.")
+        if(options.sweep && (selected_concurrency || has_work_option(arguments)))
+            throw std::invalid_argument(
+                "--sweep cannot be combined with --concurrency or --work");
+
+        LOGGING_PRINTLN("ThreadPool / WorkStealingPool benchmark (Release recommended)")
+        LOGGING_PRINTLN("tasks="<<options.tasks<<"  depth="<<options.depth
+            <<"  samples="<<options.samples<<"  mode="<<options.mode)
+        LOGGING_PRINTLN("Each pool runs alone; a new pool is warmed per sample.")
+        LOGGING_PRINTLN("Median / Min / Max / MAD are per-sample statistics.")
+        LOGGING_PRINTLN("Paired FIFO/steal is the median of per-pair ratios; >1 favors stealing.")
+
+        auto measure_configuration=[&](unsigned nworkers,unsigned rounds) {
+            Options selected=options;
+            selected.work=rounds;
+            if(selected.mode=="flat" || selected.mode=="both")
+                report("flat",selected,nworkers);
+            if(selected.mode=="recursive" || selected.mode=="both")
+                report("recursive",selected,nworkers);
+        };
+
+        if(options.sweep) {
+            LOGGING_PRINTLN("Sweep workers={1,2,4,8} x work={16,128,1024}")
+            for(unsigned nworkers : {1u,2u,4u,8u})
+                for(unsigned rounds : {16u,128u,1024u})
+                    measure_configuration(nworkers,rounds);
+        } else {
+            measure_configuration(workers,options.work);
+        }
+        LOGGING_PRINTLN(" ")
+        LOGGING_PRINTLN("Elapsed time includes task submission, execution and join,")
+        LOGGING_PRINTLN("but excludes pool construction, warm-up and destruction.")
         return 0;
     } catch(std::exception const& error) {
         LOGGING_PRINTLN("benchmark_thread_pool: "<<error.what())
