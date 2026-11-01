@@ -108,7 +108,7 @@ class TestWorkStealingPool : public Ariadne::Testing::ContextFixture {
     void test_ticket_queue_churn() {
         WorkStealingPool pool(0);
         std::atomic<int> executed{0};
-        std::vector<size_t> tickets;
+        std::vector<WorkStealingPool::Ticket> tickets;
         tickets.reserve(1024);
         for (size_t i=0;i<1024;++i) {
             tickets.push_back(pool.enqueue_ticket([&executed] { ++executed; }));
@@ -121,7 +121,7 @@ class TestWorkStealingPool : public Ariadne::Testing::ContextFixture {
             ARIADNE_TESTING_PROVE(pool.try_run_task(tickets[i]));
         ARIADNE_TESTING_EXPECT_EQUAL(executed.load(),1024);
         ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
-        for (size_t ticket : tickets)
+        for (WorkStealingPool::Ticket const& ticket : tickets)
             ARIADNE_TESTING_PROVE(!pool.try_run_task(ticket));
     }
 
