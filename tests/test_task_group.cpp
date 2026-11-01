@@ -59,6 +59,25 @@ class TestTaskGroup : public Ariadne::Testing::ContextFixture {
         ARIADNE_TESTING_EXPECT_EQUAL(compute(5),32);
     }
 
+    void test_deep_recursive_fork_join() {
+        // Regression for stack growth from FIFO cooperative helping.
+        // Both execution modes must handle a tree deeper than twelve levels.
+        for (unsigned workers : {0u,1u}) {
+            ThreadPool pool(workers);
+            std::function<int(unsigned)> compute;
+            compute = [&](unsigned depth) -> int {
+                if (depth == 0u) return 1;
+                TaskGroup group(pool);
+                auto first = group.fork([&compute,depth] { return compute(depth-1u); });
+                int other = compute(depth-1u);
+                const int result = first.get()+other;
+                group.join();
+                return result;
+            };
+            ARIADNE_TESTING_EXPECT_EQUAL(compute(13u),8192);
+        }
+    }
+
     void test_parallel_forks() {
         ThreadPool pool(2);
         std::atomic<int> active{0};
@@ -151,6 +170,7 @@ int main(int argc, char** argv) {
     ARIADNE_TESTING_SUITE("task_group");
     ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_zero_worker_helping);
     ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_nested_single_worker_fork_join);
+    ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_deep_recursive_fork_join);
     ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_parallel_forks);
     ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_join_drains_after_exception);
     ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_destructor_joins);

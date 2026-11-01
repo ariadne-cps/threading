@@ -29,7 +29,7 @@
 #ifndef THREADING_THREAD_POOL_HPP
 #define THREADING_THREAD_POOL_HPP
 
-#include <queue>
+#include <deque>
 #include "logging/logging.hpp"
 #include "utility/container.hpp"
 #include "threading/thread.hpp"
@@ -61,10 +61,11 @@ class ThreadPool {
     //! \brief The name of the pool
     String name() const;
 
-    //! \brief Run at most one pending task on the calling thread.
-    //! \details Used by structured fork/join waits so a worker can execute
-    //! queued descendants instead of blocking behind them. A task is removed
-    //! while holding the queue mutex and executed after releasing it.
+    //! \brief Run the newest queued task on the calling thread.
+    //! \details Dedicated workers retain FIFO dispatch; cooperative helping
+    //! uses LIFO so recursive waits favour recently queued descendants instead
+    //! of nesting across breadth-first sibling work. The task is extracted
+    //! under the queue mutex and executed after releasing the mutex.
     //! \return True iff a pending task was taken and executed.
     bool try_run_one_task();
 
@@ -95,7 +96,7 @@ class ThreadPool {
   private:
     const String _name;
     List<shared_ptr<Thread>> _threads;
-    std::queue<VoidFunction> _tasks;
+    std::deque<VoidFunction> _tasks;
 
     mutable mutex _task_availability_mutex;
     condition_variable _task_availability_condition;

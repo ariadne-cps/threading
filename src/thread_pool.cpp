@@ -37,7 +37,7 @@ String construct_thread_name(String prefix, size_t number, size_t max_number) {
 void ThreadPool::_enqueue_task(VoidFunction task) {
     {
         lock_guard<mutex> lock(_task_availability_mutex);
-        _tasks.emplace(std::move(task));
+        _tasks.emplace_back(std::move(task));
     }
     _task_availability_condition.notify_one();
 }
@@ -58,7 +58,7 @@ VoidFunction ThreadPool::_task_wrapper_function(size_t i) {
                     return;
                 }
                 task = std::move(_tasks.front());
-                _tasks.pop();
+                _tasks.pop_front();
                 lock.unlock();
                 task();
             }
@@ -121,8 +121,10 @@ bool ThreadPool::try_run_one_task() {
     {
         lock_guard<mutex> lock(_task_availability_mutex);
         if (_tasks.empty()) return false;
-        task = std::move(_tasks.front());
-        _tasks.pop();
+        // Helping must prefer recent descendants: taking the oldest
+        // pending task causes unbounded breadth-first nesting in fork/join.
+        task = std::move(_tasks.back());
+        _tasks.pop_back();
     }
     task();
     return true;

@@ -13,6 +13,19 @@ These are generic C++20 task-execution primitives, independent of any particular
 - StaticWorkload and DynamicWorkload: sequential or worker-based processing, including dynamic task generation.
 - WorkStealingPool: fixed-size scheduler with local queues and cooperative task stealing.
 
+## ThreadPool cooperative-helping order
+
+The resizable `ThreadPool` has a mutex-protected deque. Its dedicated
+workers take queued tasks from the front in FIFO order, as before. During
+a structured wait, `try_run_one_task()` deliberately selects the newest
+queued task from the back (LIFO). This avoids a breadth-first execution
+chain in which each nested helping wait starts an older, unrelated subtree
+and the call stack grows with the number of queued tasks.
+
+LIFO helping does not guarantee bounded stack usage for arbitrary user
+tasks, prevent deadlocks caused by application locks, or establish a
+general fairness or completion-order guarantee.
+
 ## TaskGroup and TaskHandle
 
 Include threading/task_group.hpp. Construct TaskGroup<Scheduler> with a scheduler supporting enqueue and try_run_one_task. Each group.fork(callable) returns TaskHandle<Scheduler, Result>. handle.get() waits cooperatively and returns the result or rethrows the captured exception. group.join() waits for every fork before rethrowing the first exception in fork order. The group destructor joins outstanding tasks without throwing. Call join explicitly when errors matter.
