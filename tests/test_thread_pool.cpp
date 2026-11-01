@@ -121,7 +121,8 @@ class TestSmartThreadPool : public Ariadne::Testing::ContextFixture {
                 --active;
             }));
         }
-        while (maximum.load() < num_threads) std::this_thread::yield();
+        ARIADNE_TESTING_EXPECT_ATOMIC(maximum,
+            [num_threads](size_t observed) { return observed >= num_threads; },5s);
         release = true;
         for (auto& future : futures) future.get();
         ARIADNE_TESTING_EXPECT_EQUAL(maximum.load(),num_threads);
@@ -244,7 +245,8 @@ class TestSmartThreadPool : public Ariadne::Testing::ContextFixture {
                 while (not release_running.load()) std::this_thread::yield();
             }));
         }
-        while (running_started.load() < 3) std::this_thread::yield();
+        ARIADNE_TESTING_EXPECT_ATOMIC(running_started,
+            [](size_t observed) { return observed == 3; },5s);
 
         std::atomic<size_t> queued_started = 0;
         auto queued1 = pool.enqueue([&] { ++queued_started; });

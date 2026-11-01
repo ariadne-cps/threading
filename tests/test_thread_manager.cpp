@@ -78,14 +78,19 @@ class TestThreadManager : public Ariadne::Testing::ContextFixture {
         ThreadManager::instance().set_concurrency(2);
         std::atomic<bool> task_started = false;
         std::atomic<bool> allow_read = false;
+        Ariadne::Testing::WorkerBatch worker_checks(1);
 
-        auto future = ThreadManager::instance().enqueue(VoidFunction([&, this] {
+        auto future = ThreadManager::instance().enqueue(VoidFunction([&] {
             task_started = true;
             while (not allow_read.load()) std::this_thread::yield();
-            ARIADNE_TESTING_EXPECT_EQUAL_CTX(this->ctx(),ThreadManager::instance().concurrency(),1);
+            // Record the check without accessing Context from the worker.
+            worker_checks.run(0, [](Ariadne::Testing::WorkerBatch::Worker& worker) {
+                ARIADNE_TESTING_WORKER_CHECK(worker,ThreadManager::instance().concurrency() == 1);
+            });
         }));
 
-        while (not task_started.load()) std::this_thread::yield();
+        ARIADNE_TESTING_EXPECT_ATOMIC(task_started,
+            [](bool started) { return started; },5s);
 
         auto shrink = std::async(std::launch::async,[] {
             ThreadManager::instance().set_concurrency(1);
@@ -93,7 +98,9 @@ class TestThreadManager : public Ariadne::Testing::ContextFixture {
 
         while (ThreadManager::instance().concurrency() != 1) std::this_thread::yield();
         allow_read = true;
+        ARIADNE_TESTING_EXPECT_READY(future,5s);
         future.get();
+        worker_checks.flush(this->ctx());
         shrink.get();
         ThreadManager::instance().set_concurrency(0);
     }
@@ -109,7 +116,8 @@ class TestThreadManager : public Ariadne::Testing::ContextFixture {
             task_started = true;
             while (not allow_finish.load()) std::this_thread::yield();
         }));
-        while (not task_started.load()) std::this_thread::yield();
+        ARIADNE_TESTING_EXPECT_ATOMIC(task_started,
+            [](bool started) { return started; },5s);
 
         auto shrink = std::async(std::launch::async,[] {
             ThreadManager::instance().set_concurrency(0);

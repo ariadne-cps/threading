@@ -81,11 +81,13 @@ class TestBuffer : public Ariadne::Testing::ContextFixture {
         Buffer<size_t> ib(2);
         Buffer<size_t> ob(2);
 
-        std::thread thread([&ib,&ob]() {
+        std::atomic<size_t> forwarded{0};
+        std::thread thread([&ib,&ob,&forwarded]() {
             while (true) {
                 try {
                     auto i = ib.pull();
                     ob.push(i);
+                    ++forwarded;
                 } catch (BufferInterruptPullingException&) {
                     break;
                 }
@@ -93,7 +95,8 @@ class TestBuffer : public Ariadne::Testing::ContextFixture {
         });
         ib.push(4);
         ib.push(2);
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        ARIADNE_TESTING_EXPECT_ATOMIC(forwarded,
+            [](size_t observed) { return observed == 2; }, std::chrono::seconds(10));
         ARIADNE_TESTING_EXPECT_EQUAL(ib.size(),0);
         ARIADNE_TESTING_EXPECT_EQUAL(ob.size(),2);
         auto o1 = ob.pull();

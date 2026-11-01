@@ -23,6 +23,7 @@
  */
 
 #include <chrono>
+#include <future>
 #include "ariadne-testing.hpp"
 #include "utility/container.hpp"
 #include "logging/logging.hpp"
@@ -63,14 +64,20 @@ class TestThread : public Ariadne::Testing::ContextFixture {
     void test_task() {
         std::atomic<int> a = 0;
         Thread thread([&a] { a++; });
-        std::this_thread::sleep_for(10ms);
+        ARIADNE_TESTING_EXPECT_ATOMIC(a,[](int observed) { return observed == 1; },10s);
         ARIADNE_TESTING_EXPECT_EQUAL(a.load(),1);
         ARIADNE_TESTING_PROVE(thread.exception() == nullptr);
     }
 
     void test_exception() {
-        Thread thread([] { throw std::exception(); });
-        std::this_thread::sleep_for(10ms);
+        std::promise<void> finished;
+        auto ready = finished.get_future();
+        Thread thread([&finished] {
+            // The signal becomes ready when the worker actually exits.
+            finished.set_value_at_thread_exit();
+            throw std::exception();
+        });
+        ARIADNE_TESTING_EXPECT_READY(ready,10s);
         ARIADNE_TESTING_PROVE(thread.exception() != nullptr);
     }
 
@@ -87,9 +94,12 @@ class TestThread : public Ariadne::Testing::ContextFixture {
     void test_concurrent_activate() {
         std::atomic<size_t> executions = 0;
         Thread thread([&executions] { ++executions; },"inactive",false);
-        Thread first([&thread] { thread.activate(); },"activator1");
-        Thread second([&thread] { thread.activate(); },"activator2");
-        std::this_thread::sleep_for(10ms);
+        {
+            Thread first([&thread] { thread.activate(); },"activator1");
+            Thread second([&thread] { thread.activate(); },"activator2");
+            ARIADNE_TESTING_EXPECT_ATOMIC(executions,
+                [](size_t observed) { return observed == 1; },10s);
+        } // Join both activators before the exact-count assertion.
         ARIADNE_TESTING_EXPECT_EQUAL(executions.load(),1);
     }
 
@@ -103,7 +113,8 @@ class TestThread : public Ariadne::Testing::ContextFixture {
             threads.push_back(std::make_shared<Thread>([&a] { a++; }));
         }
 
-        std::this_thread::sleep_for(100ms);
+        ARIADNE_TESTING_EXPECT_ATOMIC(a,
+            [n_threads](size_t observed) { return observed == n_threads; },10s);
         ARIADNE_TESTING_EXPECT_EQUAL(a.load(),n_threads);
         threads.clear();
     }

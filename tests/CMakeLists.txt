@@ -19,6 +19,8 @@ foreach(TEST ${UNIT_TESTS})
     add_executable(${TEST} ${TEST}.cpp)
     target_link_libraries(${TEST} ariadne-threading threading ariadne-testing)
     add_test(NAME ${TEST} COMMAND $<TARGET_FILE:${TEST}> --concise)
+    # Bounded observations cannot cancel a truly stuck worker.
+    set_tests_properties(${TEST} PROPERTIES TIMEOUT 90)
     if(WIN32)
         set_tests_properties(${TEST} PROPERTIES
             ENVIRONMENT_MODIFICATION

@@ -289,7 +289,8 @@ class TestWorkload : public Ariadne::Testing::ContextFixture {
         StaticWorkload<int,std::shared_ptr<ProcessConcurrencyState>> wl(&block_until_released,state);
         wl.append(1);
         Thread processor([&wl] { wl.process(); },"processor");
-        while (not state->started.load()) std::this_thread::yield();
+        ARIADNE_TESTING_EXPECT_ATOMIC(state->started,
+            [](bool started) { return started; },5s);
         ARIADNE_TESTING_EXPECT_EXCEPTION(wl.process());
         state->release = true;
     }
