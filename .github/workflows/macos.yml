@@ -47,7 +47,7 @@ jobs:
 
       - name: Build Release library
         if: matrix.build_type == 'Release'
-        run: cmake --build "${{ runner.workspace }}/build" --parallel "$NPROC" --target ariadne-threading
+        run: cmake --build "${{ runner.workspace }}/build" --parallel "$NPROC" --target ariadne-threading benchmark_thread_pool
 
       - name: Install Release library
         if: matrix.build_type == 'Release'

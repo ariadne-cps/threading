@@ -79,9 +79,16 @@ background worker threads. Without the option, up to four workers are used.
 `--mode flat|recursive|both` chooses the scenarios; `--help` lists the options.
 
 Both schedulers run identical work and verify their results against a
-deterministic reference checksum. The benchmark discards a warm-up pair,
-alternates pool execution order and reports median milliseconds and ratios.
-Pool construction is excluded from timing, and benchmarks are not CTest gates.
+deterministic reference checksum. Each measured iteration constructs and
+warms one pool, measures it alone, and then destroys it before creating
+the other pool. The benchmark alternates their order across paired samples
+and reports median, minimum, maximum and median absolute deviation (MAD)
+in milliseconds, plus the median of per-pair FIFO/stealing ratios.
+Pool construction, warm-up and destruction are excluded from timing.
+`--sweep` measures 1, 2, 4 and 8 workers at work=16, 128 and 1024;
+it cannot be combined with `--concurrency` or `--work`.
+Use `--mode recursive` or `--mode flat` to limit the sweep.
+The Release benchmark is compiled in CI but not run as a CTest gate.
 See [threading_design.md](doc/designs/threading_design.md) for the methodology.
 ## Coverage
 

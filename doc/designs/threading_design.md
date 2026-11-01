@@ -114,14 +114,21 @@ Both use the same `TaskGroup` and `TaskHandle` API.
 - `flat`: many independent integer-mixing tasks, submitted by the caller.
 - `recursive`: a binary fork/join tree, forking one child and computing the
   other locally, so helping waits and local scheduling are exercised.
-- Both pools are constructed outside the timed region; their worker count,
-  inputs and work per task are identical.
-- The result of every timed iteration is compared to the same sequential
-  reference checksum *after* the timer has stopped.
-- One warm-up pair is discarded; measured pairs alternate execution order
-  and the reported statistic is the median of an odd number of samples.
-- The ratio is FIFO time divided by stealing time. Values above one indicate
-  that stealing was faster for the given workload and machine.
+- Only one pool is alive at a time. Each paired sample creates, warms,
+  measures and destroys each pool sequentially. This prevents idle workers
+  in the competing pool from affecting measurements.
+- Pool creation, full warm-up and destruction are excluded from measured
+  time, while fork, task execution and joining are included.
+- Every warm-up and timed result is verified against a sequential checksum.
+  The queue is checked for leftover entries after each run.
+- Alternating order across pairs limits fixed ordering bias. For each pool
+  the report gives median, minimum, maximum and median absolute deviation
+  (MAD), measured in milliseconds.
+- The FIFO/stealing ratio is calculated separately for each pair, then
+  summarized with those same statistics; values above one favor stealing.
+- `--sweep` runs the 1/2/4/8 worker x 16/128/1024 work matrix. It does
+  not accept `--concurrency` or `--work` alongside it; `--mode` can
+  restrict the scenarios. It can be more costly than a single comparison.
 
 The benchmark extends the existing `ThreadingCommandLineInterface`, with
 the standard logging options. The inherited `-c`/`--concurrency` selects
