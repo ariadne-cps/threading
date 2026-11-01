@@ -44,18 +44,15 @@ or shared queue, with all normal worker and thief choices preserved.
 
 Unlike generic `try_run_one_task()`, targeted waits do not recurse through
 unrelated queued siblings. Arbitrary user recursion and cyclic dependencies
-can still exhaust a stack or deadlock. Pending tracked tasks are indexed by ticket in hash tables with stable
-list iterators. A targeted acquisition therefore uses average O(1) lookup
-and queue erase instead of scanning the queue. The FIFO, LIFO and stealing
-policies remain unchanged. Ordinary tasks (ticket zero) are not indexed.
-The work-stealing pool maintains an index for each scheduler across its
-global and local queues, protected by a separate mutex. When both a queue
-mutex and the index mutex are needed, the queue mutex is acquired first.
-A targeted lookup releases the index mutex before acquiring the chosen
-queue mutex, then revalidates the ticket under both locks. This avoids
-a cycle of mutex acquisitions and prevents an iterator from being used
-after another thread has removed its task. Hash tables, lists and an
-extra mutex have memory/cache costs; performance must be measured.
+can still exhaust a stack or deadlock. Pending tracked tasks return a stable handle to their original list entry.
+A targeted wait locks only the originating queue, checks whether the entry
+is still pending, and removes it by its iterator. Workers invalidate the
+handle under that same queue mutex when taking the task normally. There is
+no global ticket index or shared ticket mutex across worker-local queues.
+Ordinary tasks do not allocate a handle. Direct queue handles avoid linear
+ticket scans and redundant wrappers, but list-node allocation and cache
+locality remain potential costs and require benchmarking.
+
 
 ## TaskGroup and TaskHandle
 
