@@ -88,7 +88,7 @@ Pool construction, warm-up and destruction are excluded from timing.
 `--sweep` measures 1, 2, 4 and 8 workers at work=16, 128 and 1024;
 it cannot be combined with `--concurrency` or `--work`.
 Use `--mode recursive` or `--mode flat` to limit the sweep.
-The Release benchmark is compiled in CI but not run as a CTest gate.
+The benchmark is built and run manually; it is not a CI or CTest gate.
 See [threading_design.md](doc/designs/threading_design.md) for the methodology.
 ## Coverage
 
