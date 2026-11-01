@@ -23,7 +23,15 @@ if(EXISTS "${PROJECT_SOURCE_DIR}/.git")
             "configuration"
             "logging|configuration"
             "logging|utility|configuration"
-            "logging|utility|macro|configuration"
+            "testing|configuration"
+            "logging|testing|configuration"
+            "logging|utility|testing|configuration"
+    )
+    require_same_dependency_commit(Testing
+        CHAINS
+            "testing"
+            "logging|testing"
+            "logging|utility|testing"
     )
 endif()
 

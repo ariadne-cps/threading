@@ -1,3 +1,9 @@
+# Tests use the framework pinned directly by Threading. Reuse it if a
+# parent project has already registered the matching target.
+if(NOT TARGET ariadne-testing)
+    ariadne_add_submodule(testing)
+endif()
+
 set(UNIT_TESTS
     test_buffer
     test_buffered_thread
@@ -11,8 +17,8 @@ set(UNIT_TESTS
 
 foreach(TEST ${UNIT_TESTS})
     add_executable(${TEST} ${TEST}.cpp)
-    target_link_libraries(${TEST} ariadne-threading threading)
-    add_test(NAME ${TEST} COMMAND $<TARGET_FILE:${TEST}>)
+    target_link_libraries(${TEST} ariadne-threading threading ariadne-testing)
+    add_test(NAME ${TEST} COMMAND $<TARGET_FILE:${TEST}> --concise)
     if(WIN32)
         set_tests_properties(${TEST} PROPERTIES
             ENVIRONMENT_MODIFICATION

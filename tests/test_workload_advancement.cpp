@@ -24,55 +24,57 @@
 
 #include <thread>
 #include <vector>
-#include "macro/testing.hpp"
+#include "ariadne-testing.hpp"
 #include "threading/workload_advancement.hpp"
 
 using namespace Ariadne;
 
-class TestWorkloadAdvancement {
+class TestWorkloadAdvancement : public Ariadne::Testing::ContextFixture {
+  public:
+    using ContextFixture::ContextFixture;
   public:
 
     void test_empty_completion_rate() {
         WorkloadAdvancement wp;
-        ARIADNE_TEST_EQUALS(wp.completion_rate(),1.0)
-        ARIADNE_TEST_ASSERT(wp.has_finished())
+        ARIADNE_TESTING_EXPECT_EQUAL(wp.completion_rate(),1.0);
+        ARIADNE_TESTING_PROVE(wp.has_finished());
     }
 
     void test_creation() {
         WorkloadAdvancement wp(5);
-        ARIADNE_TEST_EQUALS(wp.completion_rate(),0.0)
-        ARIADNE_TEST_EQUALS(wp.waiting(),5)
-        ARIADNE_TEST_EQUALS(wp.processing(),0)
-        ARIADNE_TEST_EQUALS(wp.completed(),0)
-        ARIADNE_TEST_EQUALS(wp.total(),5)
-        ARIADNE_TEST_ASSERT(not wp.has_finished())
+        ARIADNE_TESTING_EXPECT_EQUAL(wp.completion_rate(),0.0);
+        ARIADNE_TESTING_EXPECT_EQUAL(wp.waiting(),5);
+        ARIADNE_TESTING_EXPECT_EQUAL(wp.processing(),0);
+        ARIADNE_TESTING_EXPECT_EQUAL(wp.completed(),0);
+        ARIADNE_TESTING_EXPECT_EQUAL(wp.total(),5);
+        ARIADNE_TESTING_PROVE(not wp.has_finished());
     }
 
     void test_advance() {
         WorkloadAdvancement wp(3);
         wp.add_to_waiting();
-        ARIADNE_TEST_EQUALS(wp.waiting(),4);
-        ARIADNE_TEST_EQUALS(wp.total(),4)
+        ARIADNE_TESTING_EXPECT_EQUAL(wp.waiting(),4);
+        ARIADNE_TESTING_EXPECT_EQUAL(wp.total(),4);
         wp.add_to_processing();
-        ARIADNE_TEST_EQUALS(wp.waiting(),3);
-        ARIADNE_TEST_EQUALS(wp.processing(),1);
-        ARIADNE_TEST_EQUALS(wp.total(),4)
+        ARIADNE_TESTING_EXPECT_EQUAL(wp.waiting(),3);
+        ARIADNE_TESTING_EXPECT_EQUAL(wp.processing(),1);
+        ARIADNE_TESTING_EXPECT_EQUAL(wp.total(),4);
         wp.add_to_completed();
-        ARIADNE_TEST_EQUALS(wp.processing(),0);
-        ARIADNE_TEST_EQUALS(wp.completed(),1);
-        ARIADNE_TEST_EQUALS(wp.total(),4)
-        ARIADNE_TEST_EQUALS(wp.completion_rate(),0.25);
+        ARIADNE_TESTING_EXPECT_EQUAL(wp.processing(),0);
+        ARIADNE_TESTING_EXPECT_EQUAL(wp.completed(),1);
+        ARIADNE_TESTING_EXPECT_EQUAL(wp.total(),4);
+        ARIADNE_TESTING_EXPECT_EQUAL(wp.completion_rate(),0.25);
     }
 
     void test_finished() {
         WorkloadAdvancement wp;
-        ARIADNE_TEST_ASSERT(wp.has_finished());
+        ARIADNE_TESTING_PROVE(wp.has_finished());
         wp.add_to_waiting(2);
-        ARIADNE_TEST_ASSERT(not wp.has_finished());
+        ARIADNE_TESTING_PROVE(not wp.has_finished());
         wp.add_to_processing(2);
         wp.add_to_completed(2);
-        ARIADNE_TEST_EQUALS(wp.completion_rate(),1.0);
-        ARIADNE_TEST_ASSERT(wp.has_finished());
+        ARIADNE_TESTING_EXPECT_EQUAL(wp.completion_rate(),1.0);
+        ARIADNE_TESTING_PROVE(wp.has_finished());
     }
 
 
@@ -88,36 +90,55 @@ class TestWorkloadAdvancement {
             });
         }
         for (auto& thread : threads) thread.join();
-        ARIADNE_TEST_EQUALS(wp.waiting(),0)
-        ARIADNE_TEST_EQUALS(wp.processing(),0)
-        ARIADNE_TEST_EQUALS(wp.completed(),count)
-        ARIADNE_TEST_EQUALS(wp.completion_rate(),1.0)
-        ARIADNE_TEST_ASSERT(wp.has_finished())
+        ARIADNE_TESTING_EXPECT_EQUAL(wp.waiting(),0);
+        ARIADNE_TESTING_EXPECT_EQUAL(wp.processing(),0);
+        ARIADNE_TESTING_EXPECT_EQUAL(wp.completed(),count);
+        ARIADNE_TESTING_EXPECT_EQUAL(wp.completion_rate(),1.0);
+        ARIADNE_TESTING_PROVE(wp.has_finished());
     }
 
     void test_invalid_transitions() {
         WorkloadAdvancement wp(4);
-        ARIADNE_TEST_FAIL(wp.add_to_waiting(0));
-        ARIADNE_TEST_FAIL(wp.add_to_processing(5));
-        ARIADNE_TEST_FAIL(wp.add_to_completed());
+        ARIADNE_TESTING_EXPECT_EXCEPTION(wp.add_to_waiting(0));
+        ARIADNE_TESTING_EXPECT_EXCEPTION(wp.add_to_processing(5));
+        ARIADNE_TESTING_EXPECT_EXCEPTION(wp.add_to_completed());
         wp.add_to_processing(2);
-        ARIADNE_TEST_FAIL(wp.add_to_completed(3));
+        ARIADNE_TESTING_EXPECT_EXCEPTION(wp.add_to_completed(3));
         wp.add_to_completed(1);
-        ARIADNE_TEST_EQUALS(wp.completion_rate(),0.25);
+        ARIADNE_TESTING_EXPECT_EQUAL(wp.completion_rate(),0.25);
     }
 
-    void test() {
-        ARIADNE_TEST_CALL(test_empty_completion_rate());
-        ARIADNE_TEST_CALL(test_creation());
-        ARIADNE_TEST_CALL(test_advance());
-        ARIADNE_TEST_CALL(test_finished());
-        ARIADNE_TEST_CALL(test_concurrent_transitions());
-        ARIADNE_TEST_CALL(test_invalid_transitions());
+    static void add_cases(Ariadne::Testing::Suite& suite) {
+        suite.add("test_empty_completion_rate", [](Ariadne::Testing::Context& context) {
+            TestWorkloadAdvancement fixture(context);
+            fixture.test_empty_completion_rate();
+        });
+        suite.add("test_creation", [](Ariadne::Testing::Context& context) {
+            TestWorkloadAdvancement fixture(context);
+            fixture.test_creation();
+        });
+        suite.add("test_advance", [](Ariadne::Testing::Context& context) {
+            TestWorkloadAdvancement fixture(context);
+            fixture.test_advance();
+        });
+        suite.add("test_finished", [](Ariadne::Testing::Context& context) {
+            TestWorkloadAdvancement fixture(context);
+            fixture.test_finished();
+        });
+        suite.add("test_concurrent_transitions", [](Ariadne::Testing::Context& context) {
+            TestWorkloadAdvancement fixture(context);
+            fixture.test_concurrent_transitions();
+        });
+        suite.add("test_invalid_transitions", [](Ariadne::Testing::Context& context) {
+            TestWorkloadAdvancement fixture(context);
+            fixture.test_invalid_transitions();
+        });
     }
 
 };
 
-int main() {
-    TestWorkloadAdvancement().test();
-    return ARIADNE_TEST_FAILURES;
+int main(int argc, char** argv) {
+    Ariadne::Testing::Suite suite("workload_advancement");
+    TestWorkloadAdvancement::add_cases(suite);
+    return Ariadne::Testing::run_suite(suite, argc, argv);
 }

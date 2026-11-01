@@ -17,15 +17,23 @@
 #include "threading/threading_command_line_interface.hpp"
 #include "threading/thread_manager.hpp"
 #include "logging/logging.hpp"
-#include "macro/testing.hpp"
+#include "ariadne-testing.hpp"
 
 using namespace Ariadne;
 
-class TestCommandLine {
+class TestCommandLine : public Ariadne::Testing::ContextFixture {
   public:
-    Void test() {
-        ARIADNE_TEST_CALL(test_inherited_logging())
-        ARIADNE_TEST_CALL(test_concurrency())
+    using ContextFixture::ContextFixture;
+  public:
+    static void add_cases(Ariadne::Testing::Suite& suite) {
+        suite.add("test_inherited_logging", [](Ariadne::Testing::Context& context) {
+            TestCommandLine fixture(context);
+            fixture.test_inherited_logging();
+        });
+        suite.add("test_concurrency", [](Ariadne::Testing::Context& context) {
+            TestCommandLine fixture(context);
+            fixture.test_concurrency();
+        });
     }
 
   private:
@@ -35,44 +43,45 @@ class TestCommandLine {
 
     Void test_inherited_logging() {
         ThreadingCommandLineInterface cli;
-        ARIADNE_TEST_ASSERT(cli.acquire({""}))
-        ARIADNE_TEST_ASSERT(cli.acquire({"","--scheduler","immediate","--verbosity","2","--concurrency","0","--theme","none"}))
-        ARIADNE_TEST_EQUALS(Logger::instance().configuration().verbosity(),2u)
-        ARIADNE_TEST_ASSERT(not Logger::instance().configuration().theme().has_style())
-        ARIADNE_TEST_EQUALS(ThreadManager::instance().concurrency(),0u)
-        ARIADNE_TEST_ASSERT(not cli.acquire({"","--concurrency","invalid"}))
+        ARIADNE_TESTING_PROVE(cli.acquire({""}));
+        ARIADNE_TESTING_PROVE(cli.acquire({"","--scheduler","immediate","--verbosity","2","--concurrency","0","--theme","none"}));
+        ARIADNE_TESTING_EXPECT_EQUAL(Logger::instance().configuration().verbosity(),2u);
+        ARIADNE_TESTING_PROVE(not Logger::instance().configuration().theme().has_style());
+        ARIADNE_TESTING_EXPECT_EQUAL(ThreadManager::instance().concurrency(),0u);
+        ARIADNE_TESTING_PROVE(not cli.acquire({"","--concurrency","invalid"}));
         Bool custom=false;
         cli.add(CommandLineContribution("custom", {
             make_unvalued_argument_parser("x","custom","Test inherited extension", [&custom] {custom=true;})
         }));
-        ARIADNE_TEST_ASSERT(cli.acquire({"","--custom"}))
-        ARIADNE_TEST_ASSERT(custom)
+        ARIADNE_TESTING_PROVE(cli.acquire({"","--custom"}));
+        ARIADNE_TESTING_PROVE(custom);
         Logger::instance().use_nonblocking_scheduler();
     }
 
     Void test_concurrency() {
         ThreadingCommandLineInterface cli=make_cli();
 
-        ARIADNE_TEST_ASSERT(cli.acquire({"","-c","0"}))
-        ARIADNE_TEST_EQUALS(ThreadManager::instance().concurrency(),0u)
+        ARIADNE_TESTING_PROVE(cli.acquire({"","-c","0"}));
+        ARIADNE_TESTING_EXPECT_EQUAL(ThreadManager::instance().concurrency(),0u);
 
-        ARIADNE_TEST_ASSERT(cli.acquire({"","--concurrency","0"}))
-        ARIADNE_TEST_EQUALS(ThreadManager::instance().concurrency(),0u)
+        ARIADNE_TESTING_PROVE(cli.acquire({"","--concurrency","0"}));
+        ARIADNE_TESTING_EXPECT_EQUAL(ThreadManager::instance().concurrency(),0u);
 
-        ARIADNE_TEST_ASSERT(not cli.acquire({"","-c","-2"}))
-        ARIADNE_TEST_ASSERT(not cli.acquire({"","-c","q"}))
-        ARIADNE_TEST_ASSERT(not cli.acquire({"","-c"}))
+        ARIADNE_TESTING_PROVE(not cli.acquire({"","-c","-2"}));
+        ARIADNE_TESTING_PROVE(not cli.acquire({"","-c","q"}));
+        ARIADNE_TESTING_PROVE(not cli.acquire({"","-c"}));
 
-        ARIADNE_TEST_ASSERT(cli.acquire({"","-c","max"}))
-        ARIADNE_TEST_EQUALS(
+        ARIADNE_TESTING_PROVE(cli.acquire({"","-c","max"}));
+        ARIADNE_TESTING_EXPECT_EQUAL(
             ThreadManager::instance().concurrency(),
-            ThreadManager::instance().maximum_concurrency())
+            ThreadManager::instance().maximum_concurrency());
 
         ThreadManager::instance().set_concurrency(0);
     }
 };
 
-Int main() {
-    TestCommandLine().test();
-    return ARIADNE_TEST_FAILURES;
+int main(int argc, char** argv) {
+    Ariadne::Testing::Suite suite("command_line");
+    TestCommandLine::add_cases(suite);
+    return Ariadne::Testing::run_suite(suite, argc, argv);
 }

@@ -23,7 +23,7 @@
  */
 
 #include <chrono>
-#include "macro/testing.hpp"
+#include "ariadne-testing.hpp"
 #include "utility/container.hpp"
 #include "logging/logging.hpp"
 #include "logging/thread_registry_interface.hpp"
@@ -43,15 +43,17 @@ private:
     unsigned int _threads_registered;
 };
 
-class TestThread {
+class TestThread : public Ariadne::Testing::ContextFixture {
+  public:
+    using ContextFixture::ContextFixture;
   public:
 
     void test_create() const {
         Thread thread1([]{}, "thr");
-        ARIADNE_TEST_EXECUTE(thread1.id())
-        ARIADNE_TEST_EQUALS(thread1.name(),"thr")
+        ARIADNE_TESTING_EXPECT_NO_THROW(thread1.id());
+        ARIADNE_TESTING_EXPECT_EQUAL(thread1.name(),"thr");
         Thread thread2([]{});
-        ARIADNE_TEST_EQUALS(to_string(thread2.id()),thread2.name())
+        ARIADNE_TESTING_EXPECT_EQUAL(to_string(thread2.id()),thread2.name());
     }
 
     void test_destroy_before_completion() const {
@@ -62,14 +64,14 @@ class TestThread {
         std::atomic<int> a = 0;
         Thread thread([&a] { a++; });
         std::this_thread::sleep_for(10ms);
-        ARIADNE_TEST_EQUALS(a.load(),1)
-        ARIADNE_TEST_ASSERT(thread.exception() == nullptr)
+        ARIADNE_TESTING_EXPECT_EQUAL(a.load(),1);
+        ARIADNE_TESTING_PROVE(thread.exception() == nullptr);
     }
 
     void test_exception() const {
         Thread thread([] { throw std::exception(); });
         std::this_thread::sleep_for(10ms);
-        ARIADNE_TEST_ASSERT(thread.exception() != nullptr)
+        ARIADNE_TESTING_PROVE(thread.exception() != nullptr);
     }
 
 
@@ -79,7 +81,7 @@ class TestThread {
         {
             Thread thread([&executions] { ++executions; },"inactive",false);
         }
-        ARIADNE_TEST_EQUALS(executions.load(),0)
+        ARIADNE_TESTING_EXPECT_EQUAL(executions.load(),0);
     }
 
     void test_concurrent_activate() const {
@@ -88,12 +90,12 @@ class TestThread {
         Thread first([&thread] { thread.activate(); },"activator1");
         Thread second([&thread] { thread.activate(); },"activator2");
         std::this_thread::sleep_for(10ms);
-        ARIADNE_TEST_EQUALS(executions,1)
+        ARIADNE_TESTING_EXPECT_EQUAL(executions,1);
     }
 
     void test_atomic_multiple_threads() const {
         size_t n_threads = 10*std::thread::hardware_concurrency();
-        ARIADNE_TEST_PRINT(n_threads)
+        ARIADNE_TESTING_INSPECT("n_threads",n_threads);
         List<shared_ptr<Thread>> threads;
 
         std::atomic<size_t> a = 0;
@@ -102,25 +104,47 @@ class TestThread {
         }
 
         std::this_thread::sleep_for(100ms);
-        ARIADNE_TEST_EQUALS(a,n_threads)
+        ARIADNE_TESTING_EXPECT_EQUAL(a,n_threads);
         threads.clear();
     }
 
-    void test() {
-        ARIADNE_TEST_CALL(test_create())
-        ARIADNE_TEST_CALL(test_destroy_before_completion())
-        ARIADNE_TEST_CALL(test_task())
-        ARIADNE_TEST_CALL(test_exception())
-        ARIADNE_TEST_CALL(test_destroy_inactive())
-        ARIADNE_TEST_CALL(test_concurrent_activate())
-        ARIADNE_TEST_CALL(test_atomic_multiple_threads())
+    static void add_cases(Ariadne::Testing::Suite& suite) {
+        suite.add("test_create", [](Ariadne::Testing::Context& context) {
+            TestThread fixture(context);
+            fixture.test_create();
+        });
+        suite.add("test_destroy_before_completion", [](Ariadne::Testing::Context& context) {
+            TestThread fixture(context);
+            fixture.test_destroy_before_completion();
+        });
+        suite.add("test_task", [](Ariadne::Testing::Context& context) {
+            TestThread fixture(context);
+            fixture.test_task();
+        });
+        suite.add("test_exception", [](Ariadne::Testing::Context& context) {
+            TestThread fixture(context);
+            fixture.test_exception();
+        });
+        suite.add("test_destroy_inactive", [](Ariadne::Testing::Context& context) {
+            TestThread fixture(context);
+            fixture.test_destroy_inactive();
+        });
+        suite.add("test_concurrent_activate", [](Ariadne::Testing::Context& context) {
+            TestThread fixture(context);
+            fixture.test_concurrent_activate();
+        });
+        suite.add("test_atomic_multiple_threads", [](Ariadne::Testing::Context& context) {
+            TestThread fixture(context);
+            fixture.test_atomic_multiple_threads();
+        });
     }
 
 };
 
-int main() {
+int main(int argc, char** argv) {
     ThreadRegistry registry;
     Ariadne::Logger::instance().attach_thread_registry(&registry);
-    TestThread().test();
-    return ARIADNE_TEST_FAILURES;
+    Ariadne::Testing::Suite suite("thread");
+    TestThread::add_cases(suite);
+    return Ariadne::Testing::run_suite(suite, argc, argv);
 }

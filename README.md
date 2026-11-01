@@ -39,6 +39,12 @@ A C++20 compiler, CMake and pthread support are required.
 
 ## Tests
 
+All eight CTest executables use [Ariadne Testing](https://github.com/ariadne-cps/testing),
+pinned in `ss/tst` and linked only to test targets. The suite contains
+83 independently reported cases, preserving the original test order,
+expected exceptions, smoke operations and concurrency scenarios.
+The CTest command uses `--concise`, while direct execution defaults to full diagnostics.
+
 Build and run the C++ tests separately in Debug mode:
 
 ```bash

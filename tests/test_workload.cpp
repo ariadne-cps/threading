@@ -23,7 +23,7 @@
  */
 
 #include <functional>
-#include "macro/testing.hpp"
+#include "ariadne-testing.hpp"
 #include "utility/container.hpp"
 #include "threading/workload.hpp"
 
@@ -122,7 +122,9 @@ void throw_once_then_accumulate(int const& value, std::shared_ptr<std::atomic<bo
     total->operator+=(value);
 }
 
-class TestWorkload {
+class TestWorkload : public Ariadne::Testing::ContextFixture {
+  public:
+    using ContextFixture::ContextFixture;
   public:
 
     void test_construct_static() {
@@ -135,7 +137,7 @@ class TestWorkload {
         ThreadManager::instance().set_concurrency(0);
         std::shared_ptr<SynchronisedList<int>> result = std::make_shared<SynchronisedList<int>>();
         DynamicWorkloadType wl(&progress_acknowledge, &square_and_store, result);
-        ARIADNE_TEST_EQUALS(wl.size(),0)
+        ARIADNE_TESTING_EXPECT_EQUAL(wl.size(),0);
     }
 
     void test_append() {
@@ -143,16 +145,16 @@ class TestWorkload {
         std::shared_ptr<SynchronisedList<int>> result = std::make_shared<SynchronisedList<int>>();
         DynamicWorkloadType wl(&progress_acknowledge, &square_and_store, result);
         wl.append(2);
-        ARIADNE_TEST_EQUALS(wl.size(),1)
+        ARIADNE_TESTING_EXPECT_EQUAL(wl.size(),1);
         wl.append({10,20});
-        ARIADNE_TEST_EQUALS(wl.size(),3)
+        ARIADNE_TESTING_EXPECT_EQUAL(wl.size(),3);
     }
 
     void test_process_nothing() {
         ThreadManager::instance().set_maximum_concurrency();
         auto result = std::make_shared<std::atomic<int>>();
         StaticWorkloadType wl(&sum_all, result);
-        ARIADNE_TEST_EXECUTE(wl.process())
+        ARIADNE_TESTING_EXPECT_NO_THROW(wl.process());
     }
 
     void test_serial_processing_static() {
@@ -162,8 +164,8 @@ class TestWorkload {
         DynamicWorkloadType wl(&progress_acknowledge, &square_and_store, result);
         wl.append(2);
         wl.process();
-        ARIADNE_TEST_PRINT(*result)
-        ARIADNE_TEST_EQUALS(result->size(),5)
+        ARIADNE_TESTING_INSPECT("*result",*result);
+        ARIADNE_TESTING_EXPECT_EQUAL(result->size(),5);
     }
 
     void test_serial_processing_dynamic() {
@@ -173,8 +175,8 @@ class TestWorkload {
         DynamicWorkloadType wl(&progress_acknowledge, &square_and_store, result);
         wl.append(2);
         wl.process();
-        ARIADNE_TEST_PRINT(*result)
-        ARIADNE_TEST_EQUALS(result->size(),5)
+        ARIADNE_TESTING_INSPECT("*result",*result);
+        ARIADNE_TESTING_EXPECT_EQUAL(result->size(),5);
     }
 
     void test_concurrent_processing_static() {
@@ -184,7 +186,7 @@ class TestWorkload {
         StaticWorkloadType wl(&sum_all, result);
         wl.append({2,7,-3,5,8,10,5,8});
         wl.process();
-        ARIADNE_TEST_EQUALS(*result,42)
+        ARIADNE_TESTING_EXPECT_EQUAL(*result,42);
     }
 
     void test_concurrent_processing_dynamic() {
@@ -194,8 +196,8 @@ class TestWorkload {
         DynamicWorkloadType wl(&progress_acknowledge, &square_and_store, result);
         wl.append(2);
         wl.process();
-        ARIADNE_TEST_PRINT(*result)
-        ARIADNE_TEST_EQUALS(result->size(),5)
+        ARIADNE_TESTING_INSPECT("*result",*result);
+        ARIADNE_TESTING_EXPECT_EQUAL(result->size(),5);
     }
 
     void test_print_hold() {
@@ -213,7 +215,7 @@ class TestWorkload {
         std::shared_ptr<SynchronisedList<int>> result = std::make_shared<SynchronisedList<int>>();
         DynamicWorkloadType wl(&progress_acknowledge, &throw_exception_immediately, result);
         wl.append(2);
-        ARIADNE_TEST_FAIL(wl.process())
+        ARIADNE_TESTING_EXPECT_EXCEPTION(wl.process());
     }
 
     void test_throw_serial_exception_later() {
@@ -221,7 +223,7 @@ class TestWorkload {
         std::shared_ptr<SynchronisedList<int>> result = std::make_shared<SynchronisedList<int>>();
         DynamicWorkloadType wl(&progress_acknowledge, &throw_exception_later, result);
         wl.append(2);
-        ARIADNE_TEST_FAIL(wl.process())
+        ARIADNE_TESTING_EXPECT_EXCEPTION(wl.process());
     }
 
     void test_throw_concurrent_exception_immediately() {
@@ -229,7 +231,7 @@ class TestWorkload {
         std::shared_ptr<SynchronisedList<int>> result = std::make_shared<SynchronisedList<int>>();
         DynamicWorkloadType wl(&progress_acknowledge, &throw_exception_immediately, result);
         wl.append(2);
-        ARIADNE_TEST_FAIL(wl.process())
+        ARIADNE_TESTING_EXPECT_EXCEPTION(wl.process());
     }
 
     void test_throw_concurrent_exception_later() {
@@ -237,7 +239,7 @@ class TestWorkload {
         std::shared_ptr<SynchronisedList<int>> result = std::make_shared<SynchronisedList<int>>();
         DynamicWorkloadType wl(&progress_acknowledge, &throw_exception_later, result);
         wl.append(2);
-        ARIADNE_TEST_FAIL(wl.process())
+        ARIADNE_TESTING_EXPECT_EXCEPTION(wl.process());
     }
 
 
@@ -258,7 +260,7 @@ class TestWorkload {
         workload.process();
 
         Logger::instance().decrease_level(1);
-        ARIADNE_TEST_EQUALS(result->load(),1)
+        ARIADNE_TESTING_EXPECT_EQUAL(result->load(),1);
         ThreadManager::instance().set_concurrency(0);
     }
 
@@ -277,7 +279,7 @@ class TestWorkload {
         workload.append(1);
         workload.process();
 
-        ARIADNE_TEST_EQUALS(result->load(),1)
+        ARIADNE_TESTING_EXPECT_EQUAL(result->load(),1);
         ThreadManager::instance().set_concurrency(0);
     }
 
@@ -288,7 +290,7 @@ class TestWorkload {
         wl.append(1);
         Thread processor([&wl] { wl.process(); },"processor");
         while (not state->started.load()) std::this_thread::yield();
-        ARIADNE_TEST_FAIL(wl.process())
+        ARIADNE_TESTING_EXPECT_EXCEPTION(wl.process());
         state->release = true;
     }
 
@@ -314,7 +316,7 @@ class TestWorkload {
         WorkloadType wl(progress,task,result);
         wl.append({1,2,3,4});
         wl.process();
-        ARIADNE_TEST_EQUALS(state->maximum.load(),1)
+        ARIADNE_TESTING_EXPECT_EQUAL(state->maximum.load(),1);
         Logger::instance().configuration().set_verbosity(0);
     }
 
@@ -327,8 +329,8 @@ class TestWorkload {
         StaticWorkload<int,std::shared_ptr<ConcurrentDoubleExceptionState>> workload(&throw_together,state);
         workload.append({1,2});
 
-        ARIADNE_TEST_FAIL(workload.process())
-        ARIADNE_TEST_EQUALS(state->ready.load(),2)
+        ARIADNE_TESTING_EXPECT_EXCEPTION(workload.process());
+        ARIADNE_TESTING_EXPECT_EQUAL(state->ready.load(),2);
     }
 
     void test_concurrent_exception_waits_for_running_tasks() {
@@ -337,8 +339,8 @@ class TestWorkload {
         auto state = std::make_shared<ConcurrentExceptionState>();
         StaticWorkload<int,std::shared_ptr<ConcurrentExceptionState>> wl(&throw_while_other_task_runs, state);
         wl.append({1,0});
-        ARIADNE_TEST_FAIL(wl.process())
-        ARIADNE_TEST_ASSERT(state->slow_finished.load())
+        ARIADNE_TESTING_EXPECT_EXCEPTION(wl.process());
+        ARIADNE_TESTING_PROVE(state->slow_finished.load());
     }
 
 
@@ -348,10 +350,10 @@ class TestWorkload {
         auto total = std::make_shared<std::atomic<int>>(0);
         StaticWorkload<int,std::shared_ptr<std::atomic<bool>>,std::shared_ptr<std::atomic<int>>> wl(&throw_once_then_accumulate, first, total);
         wl.append(1);
-        ARIADNE_TEST_FAIL(wl.process())
+        ARIADNE_TESTING_EXPECT_EXCEPTION(wl.process());
         wl.append(7);
-        ARIADNE_TEST_EXECUTE(wl.process())
-        ARIADNE_TEST_EQUALS(total->load(),7)
+        ARIADNE_TESTING_EXPECT_NO_THROW(wl.process());
+        ARIADNE_TESTING_EXPECT_EQUAL(total->load(),7);
     }
 
     void test_reuse_after_concurrent_exception() {
@@ -361,10 +363,10 @@ class TestWorkload {
         auto total = std::make_shared<std::atomic<int>>(0);
         StaticWorkload<int,std::shared_ptr<std::atomic<bool>>,std::shared_ptr<std::atomic<int>>> wl(&throw_once_then_accumulate, first, total);
         wl.append(1);
-        ARIADNE_TEST_FAIL(wl.process())
+        ARIADNE_TESTING_EXPECT_EXCEPTION(wl.process());
         wl.append(9);
-        ARIADNE_TEST_EXECUTE(wl.process())
-        ARIADNE_TEST_EQUALS(total->load(),9)
+        ARIADNE_TESTING_EXPECT_NO_THROW(wl.process());
+        ARIADNE_TESTING_EXPECT_EQUAL(total->load(),9);
     }
 
     void test_multiple_append() {
@@ -375,8 +377,8 @@ class TestWorkload {
         result->append(3);
         wl.append({2,3});
         wl.process();
-        ARIADNE_TEST_PRINT(*result)
-        ARIADNE_TEST_EQUALS(result->size(),10)
+        ARIADNE_TESTING_INSPECT("*result",*result);
+        ARIADNE_TESTING_EXPECT_EQUAL(result->size(),10);
     }
 
     void test_multiple_process() {
@@ -390,39 +392,109 @@ class TestWorkload {
         result->append(3);
         wl.append(3);
         wl.process();
-        ARIADNE_TEST_PRINT(*result)
-        ARIADNE_TEST_EQUALS(result->size(),5)
+        ARIADNE_TESTING_INSPECT("*result",*result);
+        ARIADNE_TESTING_EXPECT_EQUAL(result->size(),5);
     }
 
-    void test() {
-        ARIADNE_TEST_CALL(test_construct_static())
-        ARIADNE_TEST_CALL(test_construct_dynamic())
-        ARIADNE_TEST_CALL(test_append())
-        ARIADNE_TEST_CALL(test_process_nothing())
-        ARIADNE_TEST_CALL(test_serial_processing_static())
-        ARIADNE_TEST_CALL(test_serial_processing_dynamic())
-        ARIADNE_TEST_CALL(test_concurrent_processing_static())
-        ARIADNE_TEST_CALL(test_concurrent_processing_dynamic())
-        ARIADNE_TEST_CALL(test_print_hold())
-        ARIADNE_TEST_CALL(test_throw_serial_exception_immediately())
-        ARIADNE_TEST_CALL(test_throw_serial_exception_later())
-        ARIADNE_TEST_CALL(test_throw_concurrent_exception_immediately())
-        ARIADNE_TEST_CALL(test_throw_concurrent_exception_later())
-        ARIADNE_TEST_CALL(test_concurrent_logger_level_increase())
-        ARIADNE_TEST_CALL(test_concurrent_logger_level_decrease())
-        ARIADNE_TEST_CALL(test_concurrent_process_is_rejected())
-        ARIADNE_TEST_CALL(test_progress_acknowledgement_is_serialised())
-        ARIADNE_TEST_CALL(test_multiple_concurrent_exceptions_preserve_first())
-        ARIADNE_TEST_CALL(test_concurrent_exception_waits_for_running_tasks())
-        ARIADNE_TEST_CALL(test_reuse_after_serial_exception())
-        ARIADNE_TEST_CALL(test_reuse_after_concurrent_exception())
-        ARIADNE_TEST_CALL(test_multiple_append())
-        ARIADNE_TEST_CALL(test_multiple_process())
+    static void add_cases(Ariadne::Testing::Suite& suite) {
+        suite.add("test_construct_static", [](Ariadne::Testing::Context& context) {
+            TestWorkload fixture(context);
+            fixture.test_construct_static();
+        });
+        suite.add("test_construct_dynamic", [](Ariadne::Testing::Context& context) {
+            TestWorkload fixture(context);
+            fixture.test_construct_dynamic();
+        });
+        suite.add("test_append", [](Ariadne::Testing::Context& context) {
+            TestWorkload fixture(context);
+            fixture.test_append();
+        });
+        suite.add("test_process_nothing", [](Ariadne::Testing::Context& context) {
+            TestWorkload fixture(context);
+            fixture.test_process_nothing();
+        });
+        suite.add("test_serial_processing_static", [](Ariadne::Testing::Context& context) {
+            TestWorkload fixture(context);
+            fixture.test_serial_processing_static();
+        });
+        suite.add("test_serial_processing_dynamic", [](Ariadne::Testing::Context& context) {
+            TestWorkload fixture(context);
+            fixture.test_serial_processing_dynamic();
+        });
+        suite.add("test_concurrent_processing_static", [](Ariadne::Testing::Context& context) {
+            TestWorkload fixture(context);
+            fixture.test_concurrent_processing_static();
+        });
+        suite.add("test_concurrent_processing_dynamic", [](Ariadne::Testing::Context& context) {
+            TestWorkload fixture(context);
+            fixture.test_concurrent_processing_dynamic();
+        });
+        suite.add("test_print_hold", [](Ariadne::Testing::Context& context) {
+            TestWorkload fixture(context);
+            fixture.test_print_hold();
+        });
+        suite.add("test_throw_serial_exception_immediately", [](Ariadne::Testing::Context& context) {
+            TestWorkload fixture(context);
+            fixture.test_throw_serial_exception_immediately();
+        });
+        suite.add("test_throw_serial_exception_later", [](Ariadne::Testing::Context& context) {
+            TestWorkload fixture(context);
+            fixture.test_throw_serial_exception_later();
+        });
+        suite.add("test_throw_concurrent_exception_immediately", [](Ariadne::Testing::Context& context) {
+            TestWorkload fixture(context);
+            fixture.test_throw_concurrent_exception_immediately();
+        });
+        suite.add("test_throw_concurrent_exception_later", [](Ariadne::Testing::Context& context) {
+            TestWorkload fixture(context);
+            fixture.test_throw_concurrent_exception_later();
+        });
+        suite.add("test_concurrent_logger_level_increase", [](Ariadne::Testing::Context& context) {
+            TestWorkload fixture(context);
+            fixture.test_concurrent_logger_level_increase();
+        });
+        suite.add("test_concurrent_logger_level_decrease", [](Ariadne::Testing::Context& context) {
+            TestWorkload fixture(context);
+            fixture.test_concurrent_logger_level_decrease();
+        });
+        suite.add("test_concurrent_process_is_rejected", [](Ariadne::Testing::Context& context) {
+            TestWorkload fixture(context);
+            fixture.test_concurrent_process_is_rejected();
+        });
+        suite.add("test_progress_acknowledgement_is_serialised", [](Ariadne::Testing::Context& context) {
+            TestWorkload fixture(context);
+            fixture.test_progress_acknowledgement_is_serialised();
+        });
+        suite.add("test_multiple_concurrent_exceptions_preserve_first", [](Ariadne::Testing::Context& context) {
+            TestWorkload fixture(context);
+            fixture.test_multiple_concurrent_exceptions_preserve_first();
+        });
+        suite.add("test_concurrent_exception_waits_for_running_tasks", [](Ariadne::Testing::Context& context) {
+            TestWorkload fixture(context);
+            fixture.test_concurrent_exception_waits_for_running_tasks();
+        });
+        suite.add("test_reuse_after_serial_exception", [](Ariadne::Testing::Context& context) {
+            TestWorkload fixture(context);
+            fixture.test_reuse_after_serial_exception();
+        });
+        suite.add("test_reuse_after_concurrent_exception", [](Ariadne::Testing::Context& context) {
+            TestWorkload fixture(context);
+            fixture.test_reuse_after_concurrent_exception();
+        });
+        suite.add("test_multiple_append", [](Ariadne::Testing::Context& context) {
+            TestWorkload fixture(context);
+            fixture.test_multiple_append();
+        });
+        suite.add("test_multiple_process", [](Ariadne::Testing::Context& context) {
+            TestWorkload fixture(context);
+            fixture.test_multiple_process();
+        });
     }
 
 };
 
-int main() {
-    TestWorkload().test();
-    return ARIADNE_TEST_FAILURES;
+int main(int argc, char** argv) {
+    Ariadne::Testing::Suite suite("workload");
+    TestWorkload::add_cases(suite);
+    return Ariadne::Testing::run_suite(suite, argc, argv);
 }
