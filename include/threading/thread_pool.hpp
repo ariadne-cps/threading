@@ -30,8 +30,6 @@
 #define THREADING_THREAD_POOL_HPP
 
 #include <list>
-#include <unordered_map>
-#include <algorithm>
 #include "logging/logging.hpp"
 #include "utility/container.hpp"
 #include "threading/thread.hpp"
@@ -52,7 +50,21 @@ class StoppedThreadPoolException : public std::exception { };
 //! \details Differently from managing a single BufferedThread, the task queue for a pool is not upper-bounded, i.e., BufferedThread
 //! objects use a buffer of one element, which receives once the wrapped task that consumes elements from the task queue.
 class ThreadPool {
+  private:
+    struct QueuedTask;
+    using TaskQueue = std::list<QueuedTask>;
+
   public:
+    // Ticket carries the location of a queued task. Its mutable state is
+    // protected by this pool's queue mutex and is never read unlocked.
+    struct TaskTicket {
+      private:
+        friend class ThreadPool;
+        ThreadPool* owner = nullptr;
+        TaskQueue::iterator position{};
+        bool pending = false;
+    };
+    using Ticket = std::shared_ptr<TaskTicket>;
     //! \brief Construct from a given number of threads and possibly a name
     ThreadPool(size_t num_threads, String name = THREAD_POOL_DEFAULT_NAME);
 
@@ -71,15 +83,16 @@ class ThreadPool {
     //! \return True iff a pending task was taken and executed.
     bool try_run_one_task();
 
-    //! \brief Enqueue a tracked task, returning an opaque queue ticket.
-    //! \details A fork/join handle can reclaim this exact queued task.
-    //! This is an internal scheduling primitive; use TaskGroup for fork/join.
-    size_t enqueue_ticket(VoidFunction task);
+    //! \brief Enqueue a tracked task and return its stable queue handle.
+    //! \details The handle refers to this pool's queue only; TaskGroup is
+    //! the recommended structured-concurrency interface.
+    Ticket enqueue_ticket(VoidFunction task);
 
-    //! \brief Extract and execute a particular still-queued task.
-    //! \details Uses a hash index with average O(1) lookup and list erase.
-    //! \return False if a worker or other helper already removed the task.
-    bool try_run_task(size_t ticket);
+    //! \brief Remove and execute exactly the given still-queued task.
+    //! \details Erases through the stored list iterator under the queue mutex;
+    //! no lookup, global ticket index or duplicate queue entry is required.
+    //! \return False when already acquired by a worker or another helper.
+    bool try_run_task(Ticket const& ticket);
 
     //! \brief The size of the tasks queue
     size_t queue_size() const;
@@ -103,19 +116,16 @@ class ThreadPool {
     //! \brief Append threads in the given range
     void _append_thread_range(size_t lower, size_t upper);
     //! \brief Enqueue an already type-erased task
-    size_t _enqueue_task(VoidFunction task, bool tracked = false);
+    Ticket _enqueue_task(VoidFunction task, bool tracked = false);
     struct QueuedTask {
-        size_t ticket;
+        Ticket ticket;
         VoidFunction function;
     };
 
   private:
     const String _name;
     List<shared_ptr<Thread>> _threads;
-    using TaskQueue = std::list<QueuedTask>;
     TaskQueue _tasks;
-    std::unordered_map<size_t,TaskQueue::iterator> _tickets; // Same queue mutex.
-    size_t _next_ticket{1}; // Guarded by _task_availability_mutex.
 
     mutable mutex _task_availability_mutex;
     condition_variable _task_availability_condition;

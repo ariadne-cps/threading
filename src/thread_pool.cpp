@@ -36,40 +36,34 @@ String construct_thread_name(String prefix, size_t number, size_t max_number) {
     return ss.str();
 }
 
-size_t ThreadPool::_enqueue_task(VoidFunction task, bool tracked) {
-    size_t ticket=0;
+ThreadPool::Ticket ThreadPool::_enqueue_task(VoidFunction task, bool tracked) {
+    Ticket ticket = tracked ? std::make_shared<TaskTicket>() : Ticket{};
     {
         lock_guard<mutex> lock(_task_availability_mutex);
-        if (tracked) ticket=_next_ticket++;
-        auto it=_tasks.insert(_tasks.end(),QueuedTask{ticket,std::move(task)});
-        if (tracked) {
-            try {
-                _tickets.emplace(ticket,it);
-            } catch (...) {
-                _tasks.erase(it);
-                throw;
-            }
+        const auto it=_tasks.insert(_tasks.end(),QueuedTask{ticket,std::move(task)});
+        if (ticket) {
+            ticket->owner=this;
+            ticket->position=it;
+            ticket->pending=true;
         }
     }
     _task_availability_condition.notify_one();
     return ticket;
 }
 
-size_t ThreadPool::enqueue_ticket(VoidFunction task) {
+ThreadPool::Ticket ThreadPool::enqueue_ticket(VoidFunction task) {
     return _enqueue_task(std::move(task),true);
 }
 
-bool ThreadPool::try_run_task(size_t ticket) {
-    if (ticket==0) return false;
+bool ThreadPool::try_run_task(Ticket const& ticket) {
+    if (!ticket || ticket->owner!=this) return false;
     VoidFunction task;
     {
         lock_guard<mutex> lock(_task_availability_mutex);
-        const auto found=_tickets.find(ticket);
-        if (found==_tickets.end()) return false;
-        const auto it=found->second;
-        task=std::move(it->function);
-        _tasks.erase(it);
-        _tickets.erase(found);
+        if (!ticket->pending) return false;
+        task=std::move(ticket->position->function);
+        _tasks.erase(ticket->position);
+        ticket->pending=false;
     }
     task();
     return true;
@@ -92,7 +86,7 @@ VoidFunction ThreadPool::_task_wrapper_function(size_t i) {
                 }
                 const auto it=_tasks.begin();
                 task=std::move(it->function);
-                if (it->ticket!=0) _tickets.erase(it->ticket);
+                if (it->ticket) it->ticket->pending=false;
                 _tasks.erase(it);
                 lock.unlock();
                 task();
@@ -160,7 +154,7 @@ bool ThreadPool::try_run_one_task() {
         // pending task causes unbounded breadth-first nesting in fork/join.
         const auto it=std::prev(_tasks.end());
         task=std::move(it->function);
-        if (it->ticket!=0) _tickets.erase(it->ticket);
+        if (it->ticket) it->ticket->pending=false;
         _tasks.erase(it);
     }
     task();

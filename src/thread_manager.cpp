@@ -56,15 +56,15 @@ bool ThreadManager::try_run_one_task() {
     return _pool.try_run_one_task();
 }
 
-size_t ThreadManager::enqueue_ticket(VoidFunction task) {
+ThreadPool::Ticket ThreadManager::enqueue_ticket(VoidFunction task) {
     if (_concurrency.load()==0) {
         task();
-        return 0;
+        return {};
     }
     return _pool.enqueue_ticket(std::move(task));
 }
 
-bool ThreadManager::try_run_task(size_t ticket) {
+bool ThreadManager::try_run_task(ThreadPool::Ticket const& ticket) {
     return _pool.try_run_task(ticket);
 }
 

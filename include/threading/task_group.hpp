@@ -116,7 +116,9 @@ class TaskGroup {
         // Ticket-based acquisition ensures that both a waiting handle and
         // a worker use the scheduler's single physical queue entry.
         const auto ticket=_scheduler.enqueue_ticket([task] { (*task)(); });
-        auto try_execute=[this,ticket] { return _scheduler.try_run_task(ticket); };
+        auto try_execute=[scheduler=&_scheduler,ticket] {
+            return scheduler->try_run_task(ticket);
+        };
         TaskHandle<Scheduler, Result> handle(_scheduler,std::move(future),try_execute);
         try {
             _joiners.emplace_back([handle] { static_cast<void>(handle.get()); });

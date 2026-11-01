@@ -23,7 +23,6 @@
 #include "threading/thread_manager.hpp"
 
 #include <string>
-#include <algorithm>
 #include <iterator>
 
 namespace Ariadne {
@@ -77,97 +76,61 @@ std::size_t WorkStealingPool::queue_size() const noexcept {
     return _pending.load(std::memory_order_acquire);
 }
 
-std::size_t WorkStealingPool::_enqueue(VoidFunction task, bool tracked) {
-    std::size_t ticket=0;
+WorkStealingPool::Ticket WorkStealingPool::_enqueue(VoidFunction task, bool tracked) {
+    Ticket ticket=tracked ? std::make_shared<TaskTicket>() : Ticket{};
     {
         std::lock_guard<std::mutex> state_lock(_state_mutex);
-        // Descendants of an already running task are allowed during drain.
-        if (_stopping && _current.pool != this) {
+        // Existing tasks may spawn descendants during shutdown.
+        if (_stopping && _current.pool != this)
             throw std::runtime_error("WorkStealingPool is stopping");
-        }
-        if (tracked) ticket=_next_ticket++;
-        QueuedTask entry{ticket,std::move(task)};
-        // Consistent order: state -> queue -> ticket index. Dequeue takes
-        // queue -> ticket index; targeted lookup releases the index mutex
-        // before acquiring any queue mutex.
-        auto insert=[&](TaskQueue& queue,std::mutex& queue_mutex,std::size_t index) {
+
+        auto insert=[&](TaskQueue& queue,std::mutex& queue_mutex) {
             std::lock_guard<std::mutex> lock(queue_mutex);
-            auto it=queue.insert(queue.end(),std::move(entry));
-            if (tracked) {
-                try {
-                    std::lock_guard<std::mutex> index_lock(_ticket_mutex);
-                    _tickets.emplace(ticket,TicketLocation{index,it});
-                } catch (...) {
-                    queue.erase(it);
-                    throw;
-                }
+            auto it=queue.insert(queue.end(),QueuedTask{ticket,std::move(task)});
+            if (ticket) {
+                ticket->owner=this;
+                ticket->queue=&queue;
+                ticket->queue_mutex=&queue_mutex;
+                ticket->position=it;
+                ticket->pending=true;
             }
         };
-        if (_current.pool == this && _current.index < _locals.size()) {
+        if (_current.pool==this && _current.index<_locals.size()) {
             auto& local=*_locals[_current.index];
-            insert(local.tasks,local.mutex,_current.index);
+            insert(local.tasks,local.mutex);
         } else {
-            insert(_global,_global_mutex,no_worker);
+            insert(_global,_global_mutex);
         }
         ++_outstanding;
         _pending.fetch_add(1,std::memory_order_release);
     }
-    // All idle workers may need to steal from the newly populated local queue.
     _availability.notify_all();
     return ticket;
 }
 
-std::size_t WorkStealingPool::enqueue_ticket(VoidFunction task) {
+WorkStealingPool::Ticket WorkStealingPool::enqueue_ticket(VoidFunction task) {
     return _enqueue(std::move(task),true);
 }
 
 void WorkStealingPool::_extract(TaskQueue& queue,
                                  TaskQueue::iterator it, VoidFunction& task) {
-    // This helper is called with the queue lock held. Ordinary enqueues
-    // have ticket zero and do not touch the shared ticket index.
+    // The caller holds exactly this queue's mutex.
     task=std::move(it->function);
-    if (it->ticket!=0) {
-        std::lock_guard<std::mutex> lock(_ticket_mutex);
-        _tickets.erase(it->ticket);
-    }
+    if (it->ticket) it->ticket->pending=false;
     queue.erase(it);
     _pending.fetch_sub(1,std::memory_order_acq_rel);
 }
 
-bool WorkStealingPool::try_run_task(std::size_t ticket) {
-    if (ticket==0) return false;
-    std::size_t queue_index;
-    {
-        std::lock_guard<std::mutex> lock(_ticket_mutex);
-        auto found=_tickets.find(ticket);
-        if (found==_tickets.end()) return false;
-        queue_index=found->second.queue_index;
-    }
-    // Never acquire a queue mutex while holding the index mutex.
-    // Another executor may have removed the task since the first lookup,
-    // so recheck after locking its original queue.
+bool WorkStealingPool::try_run_task(Ticket const& ticket) {
+    if (!ticket || ticket->owner!=this) return false;
     VoidFunction task;
-    auto acquire=[&](TaskQueue& queue,std::mutex& queue_mutex) -> bool {
-        std::lock_guard<std::mutex> lock(queue_mutex);
-        std::lock_guard<std::mutex> index_lock(_ticket_mutex);
-        const auto found=_tickets.find(ticket);
-        if (found==_tickets.end()) return false;
-        // Iterator is valid because the queue mutex prevents erase.
-        const auto it=found->second.iterator;
-        task=std::move(it->function);
-        queue.erase(it);
-        _tickets.erase(found);
-        _pending.fetch_sub(1,std::memory_order_acq_rel);
-        return true;
-    };
-    bool acquired=false;
-    if (queue_index==no_worker) {
-        acquired=acquire(_global,_global_mutex);
-    } else {
-        acquired=acquire(_locals[queue_index]->tasks,_locals[queue_index]->mutex);
+    {
+        // The original queue and mutex remain alive for the pool's lifetime.
+        std::lock_guard<std::mutex> lock(*ticket->queue_mutex);
+        if (!ticket->pending) return false;
+        _extract(*ticket->queue,ticket->position,task);
     }
-    if (not acquired) return false;
-    _execute(std::move(task)); // No mutex is held while invoking task code.
+    _execute(std::move(task)); // Execute outside the queue lock.
     return true;
 }
 

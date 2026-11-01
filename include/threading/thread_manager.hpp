@@ -85,12 +85,12 @@ class ThreadManager : public ThreadRegistryInterface {
     //! This does not alter the configured concurrency.
     bool try_run_one_task();
 
-    //! \brief Enqueue a tracked fork/join task and return its queue ticket.
-    //! \details Concurrency zero executes the task immediately and returns 0.
-    size_t enqueue_ticket(VoidFunction task);
+    //! \brief Queue a tracked fork/join child, returning its pool handle.
+    //! \details With concurrency zero it runs synchronously and returns empty.
+    ThreadPool::Ticket enqueue_ticket(VoidFunction task);
 
-    //! \brief Execute an exact pending task, when it is still queued.
-    bool try_run_task(size_t ticket);
+    //! \brief Execute exactly this pending child if still queued.
+    bool try_run_task(ThreadPool::Ticket const& ticket);
 
     //! \brief Enqueue a task for execution, returning the future handler
     //! \details The is no limits on the number of tasks to enqueue. If concurrency is zero,

@@ -26,8 +26,6 @@
 #include <condition_variable>
 #include <cstddef>
 #include <list>
-#include <unordered_map>
-#include <iterator>
 #include <functional>
 #include <future>
 #include <memory>
@@ -56,7 +54,23 @@ namespace Ariadne {
 //! or on the destroying thread when the pool drains its queue.
 //! Logger registration uses the process-wide ThreadManager registry.
 class WorkStealingPool {
+  private:
+    struct QueuedTask;
+    using TaskQueue=std::list<QueuedTask>;
+
   public:
+    // Stable handle to a particular queue entry. The original queue mutex
+    // protects the pending state and iterator against concurrent removals.
+    struct TaskTicket {
+      private:
+        friend class WorkStealingPool;
+        WorkStealingPool* owner=nullptr;
+        TaskQueue* queue=nullptr;
+        std::mutex* queue_mutex=nullptr;
+        TaskQueue::iterator position{};
+        bool pending=false;
+    };
+    using Ticket=std::shared_ptr<TaskTicket>;
     explicit WorkStealingPool(std::size_t workers);
     WorkStealingPool(WorkStealingPool const&) = delete;
     WorkStealingPool& operator=(WorkStealingPool const&) = delete;
@@ -78,13 +92,13 @@ class WorkStealingPool {
     //! \brief Enqueue a tracked task and return its queue ticket.
     //! \details TaskGroup uses the ticket to take its own child from the
     //! actual queue rather than executing a duplicate queue wrapper.
-    std::size_t enqueue_ticket(VoidFunction task);
+    Ticket enqueue_ticket(VoidFunction task);
 
-    //! \brief Extract and execute a specific queued task when still pending.
-    //! \details Hash lookup finds its original queue and stable iterator;
-    //! the queue mutex protects against concurrent worker removal.
-    //! \return False if another worker or helper has already taken it.
-    bool try_run_task(std::size_t ticket);
+    //! \brief Remove and execute a specific pending task from its original queue.
+    //! \details Only that queue's mutex is acquired. No global ticket
+    //! registry or cross-queue lookup is needed.
+    //! \return False when another worker or helper has already taken it.
+    bool try_run_task(Ticket const& ticket);
 
     //! \brief Help execute one queued task on the calling thread.
     //! \details If called by a worker, attempts its own local work first,
@@ -101,17 +115,12 @@ class WorkStealingPool {
 
   private:
     struct QueuedTask {
-        std::size_t ticket;
+        Ticket ticket;
         VoidFunction function;
     };
-    using TaskQueue=std::list<QueuedTask>;
     struct LocalQueue {
         std::mutex mutex;
         TaskQueue tasks;
-    };
-    struct TicketLocation {
-        std::size_t queue_index; // no_worker denotes global queue.
-        TaskQueue::iterator iterator;
     };
     struct WorkerContext {
         WorkStealingPool* pool;
@@ -120,7 +129,7 @@ class WorkStealingPool {
     static thread_local WorkerContext _current;
     static constexpr std::size_t no_worker = static_cast<std::size_t>(-1);
 
-    std::size_t _enqueue(VoidFunction task, bool tracked = false);
+    Ticket _enqueue(VoidFunction task, bool tracked = false);
     // Caller must hold the corresponding queue mutex.
     void _extract(TaskQueue& queue, TaskQueue::iterator it, VoidFunction& task);
     bool _take(VoidFunction& task);
@@ -131,16 +140,12 @@ class WorkStealingPool {
 
     std::vector<std::unique_ptr<LocalQueue>> _locals;
     TaskQueue _global;
-    std::mutex _ticket_mutex;
-    std::unordered_map<std::size_t,TicketLocation> _tickets;
-    // Queue mutex must precede ticket mutex when both are acquired.
     std::mutex _global_mutex;
     std::vector<std::shared_ptr<Thread>> _workers;
 
     std::mutex _state_mutex;
     std::condition_variable _availability;
     std::atomic<std::size_t> _pending{0};
-    std::size_t _next_ticket{1}; // Guarded by _state_mutex.
     std::size_t _outstanding{0}; // Guarded by _state_mutex.
     bool _stopping{false};       // Guarded by _state_mutex.
 };
