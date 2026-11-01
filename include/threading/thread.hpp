@@ -35,7 +35,7 @@
 #include <mutex>
 #include <atomic>
 #include <functional>
-#include "macro/general.hpp"
+#include "utility/macros.hpp"
 #include "utility/string.hpp"
 
 namespace Ariadne {

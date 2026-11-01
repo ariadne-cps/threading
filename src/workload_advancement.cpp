@@ -22,7 +22,7 @@
  *  along with Threading.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#include "macro/general.hpp"
+#include "utility/macros.hpp"
 #include "threading/workload_advancement.hpp"
 
 namespace Ariadne {

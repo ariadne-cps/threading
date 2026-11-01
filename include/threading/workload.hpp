@@ -31,6 +31,7 @@
 
 #include <functional>
 #include <iomanip>
+#include "utility/macros.hpp"
 #include "utility/container.hpp"
 #include "utility/tuple.hpp"
 #include "logging/progress_indicator.hpp"
