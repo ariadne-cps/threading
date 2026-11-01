@@ -171,6 +171,9 @@ class TestTaskGroup : public Ariadne::Testing::ContextFixture {
 };
 
 int main(int argc, char** argv) {
+    // ThreadPool workers register with Logger. ThreadManager installs
+    // the process-wide registry before the first worker is constructed.
+    (void)ThreadManager::instance();
     Ariadne::Testing::Suite suite("task_group");
     TestTaskGroup::add_cases(suite);
     return Ariadne::Testing::run_suite(suite,argc,argv);
