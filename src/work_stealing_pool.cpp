@@ -122,12 +122,15 @@ bool WorkStealingPool::try_run_task(std::size_t ticket) {
     VoidFunction task;
     // The global and local queues are independent. Each is locked while
     // searching, so a queued child is acquired by exactly one executor.
+    bool from_global=false;
     {
         std::lock_guard<std::mutex> lock(_global_mutex);
-        if (_remove_ticket(_global,ticket,task)) {
-            _execute(std::move(task));
-            return true;
-        }
+        from_global=_remove_ticket(_global,ticket,task);
+    }
+    // Never execute a user task while holding a queue mutex.
+    if (from_global) {
+        _execute(std::move(task));
+        return true;
     }
     for (auto const& queue : _locals) {
         bool found=false;
