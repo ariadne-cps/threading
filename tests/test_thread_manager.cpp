@@ -78,16 +78,12 @@ class TestThreadManager : public Ariadne::Testing::ContextFixture {
         ThreadManager::instance().set_concurrency(2);
         std::atomic<bool> task_started = false;
         std::atomic<bool> allow_read = false;
-        Ariadne::Testing::WorkerBatch worker_checks(1);
-
-        auto future = ThreadManager::instance().enqueue(VoidFunction([&] {
+        // Return the worker's observation to the owning case thread.
+        auto future = ThreadManager::instance().enqueue([&]() -> size_t {
             task_started = true;
             while (not allow_read.load()) std::this_thread::yield();
-            // Record the check without accessing Context from the worker.
-            worker_checks.run(0, [](Ariadne::Testing::WorkerBatch::Worker& worker) {
-                ARIADNE_TESTING_WORKER_CHECK(worker,ThreadManager::instance().concurrency() == 1);
-            });
-        }));
+            return ThreadManager::instance().concurrency();
+        });
 
         ARIADNE_TESTING_EXPECT_ATOMIC(task_started,
             [](bool started) { return started; },5s);
@@ -99,8 +95,8 @@ class TestThreadManager : public Ariadne::Testing::ContextFixture {
         while (ThreadManager::instance().concurrency() != 1) std::this_thread::yield();
         allow_read = true;
         ARIADNE_TESTING_EXPECT_READY(future,5s);
-        future.get();
-        worker_checks.flush(this->ctx());
+        const auto observed_concurrency = future.get();
+        ARIADNE_TESTING_EXPECT_EQUAL(observed_concurrency,size_t{1});
         shrink.get();
         ThreadManager::instance().set_concurrency(0);
     }
