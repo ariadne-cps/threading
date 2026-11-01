@@ -5,7 +5,6 @@ add_library(${LIBRARY_NAME} OBJECT
         thread.cpp
         buffered_thread.cpp
         thread_pool.cpp
-        work_stealing_pool.cpp
         workload_advancement.cpp
         thread_manager.cpp
         )

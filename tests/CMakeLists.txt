@@ -14,7 +14,7 @@ set(UNIT_TESTS
     test_workload_advancement
     test_workload
     test_task_group
-    test_work_stealing_pool
+    test_work_stealing_policy
 )
 
 foreach(TEST ${UNIT_TESTS})

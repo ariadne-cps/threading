@@ -21,7 +21,6 @@
  * along with Threading. If not, see <https://www.gnu.org/licenses/>.
  */
 #include "threading/thread_pool.hpp"
-#include "threading/work_stealing_pool.hpp"
 #include "threading/task_group.hpp"
 #include "threading/thread_manager.hpp"
 #include "threading/threading_command_line_interface.hpp"
@@ -237,10 +236,10 @@ struct Comparison {
 // Construct exactly one pool at a time, keeping all other pool workers
 // absent. Worker startup, a complete warm-up and destruction are excluded
 // from the clock. Every measured sample uses a freshly warmed pool.
-template<class Scheduler>
 double measure_pool(std::string const& mode, Options const& options,
-                    unsigned workers, std::uint64_t reference) {
-    Scheduler scheduler(workers);
+                    unsigned workers, std::uint64_t reference,
+                    SchedulingPolicy policy) {
+    ThreadPool scheduler(workers,policy);
     auto run=[&]() -> std::uint64_t {
         if(mode=="flat")return flat_run(scheduler,options.tasks,options.work);
         return recursive_run(scheduler,options.depth,left_tag,options.work,
@@ -270,11 +269,11 @@ Comparison compare(std::string const& mode, Options const& options,
         double fifo_ms=0.0,stealing_ms=0.0;
         // Alternate the order of separately constructed, warmed pools.
         if(sample%2u==0u) {
-            fifo_ms=measure_pool<ThreadPool>(mode,options,workers,reference);
-            stealing_ms=measure_pool<WorkStealingPool>(mode,options,workers,reference);
+            fifo_ms=measure_pool(mode,options,workers,reference,SchedulingPolicy::FIFO);
+            stealing_ms=measure_pool(mode,options,workers,reference,SchedulingPolicy::WorkStealing);
         } else {
-            stealing_ms=measure_pool<WorkStealingPool>(mode,options,workers,reference);
-            fifo_ms=measure_pool<ThreadPool>(mode,options,workers,reference);
+            stealing_ms=measure_pool(mode,options,workers,reference,SchedulingPolicy::WorkStealing);
+            fifo_ms=measure_pool(mode,options,workers,reference,SchedulingPolicy::FIFO);
         }
         if(!(std::isfinite(fifo_ms) && std::isfinite(stealing_ms)
              && fifo_ms>0.0 && stealing_ms>0.0))
@@ -314,7 +313,7 @@ void report(std::string const& mode,Options const& options,unsigned workers) {
         <<std::setw(13)<<"MAD"<<"  Unit")
     LOGGING_PRINTLN(std::string(81u,'-'))
     print_statistics("ThreadPool",times.fifo,"ms");
-    print_statistics("WorkStealingPool",times.stealing,"ms");
+    print_statistics("ThreadPool[WorkStealing]",times.stealing,"ms");
     print_statistics("Paired FIFO/steal",times.paired_ratio,"x");
 }
 
@@ -380,7 +379,7 @@ int main(int argc,const char* argv[]) {
             throw std::invalid_argument(
                 "--cutoff-sweep requires a recursive workload");
 
-        LOGGING_PRINTLN("ThreadPool / WorkStealingPool benchmark (Release recommended)")
+        LOGGING_PRINTLN("ThreadPool / ThreadPool[WorkStealing] benchmark (Release recommended)")
         LOGGING_PRINTLN("tasks="<<options.tasks<<"  depth="<<options.depth
             <<"  samples="<<options.samples<<"  mode="
             <<(options.cutoff_sweep?"recursive (cutoff sweep)":options.mode))

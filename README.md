@@ -13,18 +13,16 @@ A small C++20 library for thread management, thread pools, buffered workers and 
 
 - `Thread`: managed single-shot threads with activation and exception reporting.
 - `BufferedThread`: a worker thread with a bounded task queue.
-- `ThreadPool`: dynamically resizable pool with asynchronous task submission.
+- `ThreadPool`: one scheduler with FIFO and work-stealing policies, asynchronous submission and administrative resizing.
 - `ThreadManager`: process-wide concurrency management.
 - `StaticWorkload` and `DynamicWorkload`: serial or concurrent workload processing.
 - Thread-safe workload progress tracking.
 - Structured fork/join via `TaskGroup` and `TaskHandle`, using cooperative
   waits to execute pending work from the same scheduler. Task groups join
   outstanding tasks on scope exit and propagate exceptions on explicit join.
-- `WorkStealingPool`: fixed-size scheduler with local LIFO queues, external
-  FIFO submission and FIFO stealing by idle workers. Its API is compatible
-  with `TaskGroup`, including zero-worker cooperative execution. See
-  [the concurrency design](doc/designs/threading_design.md) for guarantees,
-  lifecycle constraints and examples.
+- `SchedulingPolicy::WorkStealing`: worker-local LIFO queues and FIFO
+  victim stealing, selected with `ThreadPool(workers,SchedulingPolicy::WorkStealing)`.
+  See [the concurrency design](doc/designs/threading_design.md).
 - Coverage support on Ubuntu/GCC and macOS/AppleClang.
 
 ## Command-line interface
@@ -78,7 +76,7 @@ The global ThreadManager is reset to zero before timing, to avoid competing
 background worker threads. Without the option, up to four workers are used.
 `--mode flat|recursive|both` chooses the scenarios; `--help` lists the options.
 
-Both schedulers run identical work and verify their results against a
+Both scheduling policies run identical work and verify their results against a
 deterministic reference checksum. Each measured iteration constructs and
 warms one pool, measures it alone, and then destroys it before creating
 the other pool. The benchmark alternates their order across paired samples

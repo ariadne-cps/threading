@@ -8,14 +8,14 @@ These are generic C++20 task-execution primitives, independent of any particular
 
 - Thread: a managed single-shot thread.
 - BufferedThread: a single worker with a bounded queue.
-- ThreadPool: a resizable FIFO pool with optional one-task helping.
+- ThreadPool: a unified pool with FIFO or work-stealing policy, optional helping and administrative resizing.
 - ThreadManager: process-wide concurrency control; concurrency zero executes synchronously.
 - StaticWorkload and DynamicWorkload: sequential or worker-based processing, including dynamic task generation.
-- WorkStealingPool: fixed-size scheduler with local queues and cooperative task stealing.
+- ThreadPool with SchedulingPolicy::WorkStealing: fixed-size scheduler with local queues and cooperative task stealing.
 
 ## ThreadPool cooperative-helping order
 
-The resizable `ThreadPool` has a mutex-protected deque. Its dedicated
+The FIFO policy of `ThreadPool` has a mutex-protected list queue. Its dedicated
 workers take queued tasks from the front in FIFO order, as before. During
 a structured wait, `try_run_one_task()` deliberately selects the newest
 queued task from the back (LIFO). This avoids a breadth-first execution
@@ -67,7 +67,7 @@ The group is owned by a single thread; do not concurrently fork or join on the s
 #include "threading/work_stealing_pool.hpp"
 #include <functional>
 
-Ariadne::WorkStealingPool scheduler(4);
+Ariadne::ThreadPool scheduler(4,Ariadne::SchedulingPolicy::WorkStealing);
 std::function<unsigned(unsigned)> compute;
 compute = [&](unsigned n) -> unsigned {
     if (n == 0) return 1;
@@ -83,9 +83,9 @@ unsigned result = compute(8);
 
 Fork only sufficiently large tasks: extremely fine-grained recursion may cost more in scheduling than it saves in parallel execution.
 
-## WorkStealingPool scheduling semantics
+## ThreadPool with SchedulingPolicy::WorkStealing scheduling semantics
 
-Include threading/work_stealing_pool.hpp and construct WorkStealingPool(number_of_workers); worker count remains fixed and may be zero. enqueue(fn,args...) returns std::future<Result>, which carries task exceptions. External callers submit to a global FIFO. Tasks already running on a pool worker submit their descendants to that worker's local deque. The owner takes newest tasks from the back (LIFO); idle workers take oldest tasks from other deques (FIFO stealing). All queue operations are mutex-protected; there is no lock-free guarantee.
+Include threading/thread_pool.hpp and construct ThreadPool(number_of_workers,SchedulingPolicy::WorkStealing); worker count remains fixed and may be zero. enqueue(fn,args...) returns std::future<Result>, which carries task exceptions. External callers submit to a global FIFO. Tasks already running on a pool worker submit their descendants to that worker's local deque. The owner takes newest tasks from the back (LIFO); idle workers take oldest tasks from other deques (FIFO stealing). All queue operations are mutex-protected; there is no lock-free guarantee.
 
 try_run_one_task() executes at most one queued task in the calling thread. A worker tries its own local queue, then global queue, then other workers' queues. External helpers try global work and steal from workers. A helping wait may execute arbitrary nested task bodies. Application locks must not be held across helping waits if those tasks might need the same locks.
 
@@ -108,7 +108,7 @@ Work stealing here is based on mutex-protected deques and scans, not a lock-free
 ## Reproducible performance comparison
 
 `benchmarks/benchmark_thread_pool.cpp` compares the resizable FIFO
-`ThreadPool` with the fixed-size `WorkStealingPool` under identical loads.
+`ThreadPool` with the fixed-size `ThreadPool with SchedulingPolicy::WorkStealing` under identical loads.
 Both use the same `TaskGroup` and `TaskHandle` API.
 
 - `flat`: many independent integer-mixing tasks, submitted by the caller.
@@ -152,3 +152,7 @@ not scheduler startup, fairness, end-to-end application costs or general
 scalability. They depend on system load, CPU topology, compiler flags and
 worker count. Do not interpret a single result as a universal performance
 advantage for either scheduler.
+
+## Unified scheduler
+
+`ThreadPool` selects immutable `SchedulingPolicy::FIFO` (default) or `SchedulingPolicy::WorkStealing` at construction. Both policies share tickets, execution, shutdown, cooperative helping and worker management. The separate `WorkStealingPool` class is removed intentionally. `ThreadManager::set_concurrency()` remains an administrative configuration operation for the process-wide pool, not a nested task budget; algorithms control fork granularity and share the same scheduler.

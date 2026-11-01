@@ -23,13 +23,26 @@
  */
 
 /*! \file thread_pool.hpp
- *  \brief A pool of threads
+ *  \brief Shared task scheduler with selectable dispatch policy.
  */
-
 #ifndef THREADING_THREAD_POOL_HPP
 #define THREADING_THREAD_POOL_HPP
 
+#include <atomic>
+#include <condition_variable>
+#include <cstddef>
+#include <functional>
+#include <future>
 #include <list>
+#include <memory>
+#include <mutex>
+#include <shared_mutex>
+#include <string>
+#include <thread>
+#include <type_traits>
+#include <utility>
+#include <vector>
+
 #include "logging/logging.hpp"
 #include "utility/container.hpp"
 #include "threading/thread.hpp"
@@ -43,114 +56,113 @@ using Ariadne::List;
 
 const String THREAD_POOL_DEFAULT_NAME = "thr";
 
-//! \brief Exception for stopping a thread pool
 class StoppedThreadPoolException : public std::exception { };
 
-//! \brief A pool of Thread objects managed internally given a (variable) number of threads
-//! \details Differently from managing a single BufferedThread, the task queue for a pool is not upper-bounded, i.e., BufferedThread
-//! objects use a buffer of one element, which receives once the wrapped task that consumes elements from the task queue.
+//! \brief Scheduling strategy, fixed for the lifetime of a pool.
+enum class SchedulingPolicy { FIFO, WorkStealing };
+
+//! \brief Shared task scheduler for independent and nested task groups.
+//! \details FIFO uses one shared queue (workers take oldest, helpers newest).
+//! WorkStealing uses worker-local LIFO queues, FIFO stealing, and an external
+//! global FIFO injection queue. Resizing is an administrative operation.
 class ThreadPool {
   private:
     struct QueuedTask;
-    using TaskQueue = std::list<QueuedTask>;
+    using TaskQueue=std::list<QueuedTask>;
 
   public:
-    // Ticket carries the location of a queued task. Its mutable state is
-    // protected by this pool's queue mutex and is never read unlocked.
     struct TaskTicket {
       private:
         friend class ThreadPool;
-        ThreadPool* owner = nullptr;
+        ThreadPool* owner=nullptr;
+        TaskQueue* queue=nullptr;
+        std::mutex* queue_mutex=nullptr;
         TaskQueue::iterator position{};
-        bool pending = false;
+        bool pending=false;
     };
-    using Ticket = std::shared_ptr<TaskTicket>;
-    //! \brief Construct from a given number of threads and possibly a name
-    ThreadPool(size_t num_threads, String name = THREAD_POOL_DEFAULT_NAME);
+    using Ticket=std::shared_ptr<TaskTicket>;
 
-    //! \brief Enqueue a task for execution, returning the future handler
-    //! \details The is no limits on the number of tasks to enqueue
-    template<class F, class... AS> auto enqueue(F &&f, AS &&... args) -> future<ResultOf<F(AS...)>>;
+    explicit ThreadPool(size_t num_threads,
+                        String name=THREAD_POOL_DEFAULT_NAME,
+                        SchedulingPolicy policy=SchedulingPolicy::FIFO);
+    ThreadPool(size_t num_threads,SchedulingPolicy policy)
+        : ThreadPool(num_threads,THREAD_POOL_DEFAULT_NAME,policy) { }
+    ThreadPool(ThreadPool const&)=delete;
+    ThreadPool& operator=(ThreadPool const&)=delete;
+    ThreadPool(ThreadPool&&)=delete;
+    ThreadPool& operator=(ThreadPool&&)=delete;
+    ~ThreadPool() noexcept;
 
-    //! \brief The name of the pool
+    template<class F,class... AS>
+    auto enqueue(F&& f,AS&&... args) -> future<ResultOf<F(AS...)>>;
+
     String name() const;
-
-    //! \brief Run the newest queued task on the calling thread.
-    //! \details Dedicated workers retain FIFO dispatch; cooperative helping
-    //! uses LIFO so recursive waits favour recently queued descendants instead
-    //! of nesting across breadth-first sibling work. The task is extracted
-    //! under the queue mutex and executed after releasing the mutex.
-    //! \return True iff a pending task was taken and executed.
+    SchedulingPolicy policy() const noexcept { return _policy; }
     bool try_run_one_task();
-
-    //! \brief Enqueue a tracked task and return its stable queue handle.
-    //! \details The handle refers to this pool's queue only; TaskGroup is
-    //! the recommended structured-concurrency interface.
     Ticket enqueue_ticket(VoidFunction task);
-
-    //! \brief Remove and execute exactly the given still-queued task.
-    //! \details Erases through the stored list iterator under the queue mutex;
-    //! no lookup, global ticket index or duplicate queue entry is required.
-    //! \return False when already acquired by a worker or another helper.
     bool try_run_task(Ticket const& ticket);
-
-    //! \brief The size of the tasks queue
-    size_t queue_size() const;
-
-    //! \brief The number of threads
+    size_t queue_size() const noexcept;
     size_t num_threads() const;
 
-    //! \brief Set the number of threads
-    //! \details If reducing the current number, this method will block until
-    //! all the previous tasks are completed, previous threads are destroyed
-    //! and new threads are spawned
+    //! \brief Administratively resize the worker set.
+    //! \details Shrinking waits until existing queued and running tasks
+    //! finish, then joins retired workers. Do not resize from a pool task.
     void set_num_threads(size_t number);
 
-    ~ThreadPool();
-
   private:
-
-    //! \brief The function wrapper handling the extraction from the queue
-    //! \details Takes \a i as the index of the thread in the list, for identification when stopping selectively
-    VoidFunction _task_wrapper_function(size_t i);
-    //! \brief Append threads in the given range
-    void _append_thread_range(size_t lower, size_t upper);
-    //! \brief Enqueue an already type-erased task
-    Ticket _enqueue_task(VoidFunction task, bool tracked = false);
     struct QueuedTask {
         Ticket ticket;
         VoidFunction function;
     };
+    struct LocalQueue {
+        std::mutex mutex;
+        TaskQueue tasks;
+    };
+    struct WorkerContext {
+        ThreadPool* pool;
+        size_t index;
+    };
+    static thread_local WorkerContext _current;
+    static constexpr size_t no_worker=static_cast<size_t>(-1);
 
-  private:
+    Ticket _enqueue_task(VoidFunction task,bool tracked=false);
+    // Caller holds the queue's mutex.
+    void _extract(TaskQueue& queue,TaskQueue::iterator it,VoidFunction& task);
+    bool _take(VoidFunction& task,bool worker_dispatch);
+    bool _take_global(VoidFunction& task,bool fifo);
+    bool _take_local(size_t index,VoidFunction& task,bool steal);
+    void _execute(VoidFunction task);
+    void _worker_loop(size_t index);
+
     const String _name;
-    List<shared_ptr<Thread>> _threads;
-    TaskQueue _tasks;
+    const SchedulingPolicy _policy;
+    std::vector<std::unique_ptr<LocalQueue>> _locals;
+    TaskQueue _global;
+    std::mutex _global_mutex;
+    std::vector<std::shared_ptr<Thread>> _workers;
 
-    mutable mutex _task_availability_mutex;
-    condition_variable _task_availability_condition;
-    bool _finish_all_and_stop; // Wait till the queue is empty before stopping the thread, used for destruction
-    size_t _num_active_threads; // Down-counter for checking whether all the threads to stop have been stopped
-    size_t _num_threads_to_use; // Reference on the number of threads to use: if lower than the threads size, the last threads will stop
-    mutable mutex _num_threads_mutex;
-    promise<void> _all_unused_threads_stopped_promise;
-    future<void> _all_unused_threads_stopped_future;
+    // Shared reads allow parallel queue operations; resize is exclusive.
+    mutable std::shared_mutex _topology_mutex;
+    mutable std::mutex _resize_mutex;
+    mutable std::mutex _state_mutex;
+    std::condition_variable _availability;
+    std::atomic<size_t> _pending{0};
+    std::atomic<size_t> _desired_workers{0};
+    size_t _outstanding{0}; // Protected by _state_mutex.
+    bool _stopping{false};  // Protected by _state_mutex.
 };
 
-template<class F, class... AS>
-auto ThreadPool::enqueue(F &&f, AS &&... args) -> future<ResultOf<F(AS...)>> {
-    using ReturnType = ResultOf<F(AS...)>;
-
-    auto task = make_shared<packaged_task<ReturnType()> >(std::bind(std::forward<F>(f), std::forward<AS>(args)...));
-    future<ReturnType> result = task->get_future();
-    _enqueue_task([task]{ (*task)(); });
+template<class F,class... AS>
+auto ThreadPool::enqueue(F&& f,AS&&... args) -> future<ResultOf<F(AS...)>> {
+    using ReturnType=ResultOf<F(AS...)>;
+    auto task=make_shared<packaged_task<ReturnType()>>(
+        std::bind(std::forward<F>(f),std::forward<AS>(args)...));
+    future<ReturnType> result=task->get_future();
+    _enqueue_task([task] { (*task)(); });
     return result;
 }
 
-//! \brief Utility function to construct a thread name from a \a prefix and a \a number,
-//! accounting for a maximum number of threads given by \a max_number
-String construct_thread_name(String prefix, size_t number, size_t max_number);
+String construct_thread_name(String prefix,size_t number,size_t max_number);
 
-}
-
+} // namespace Ariadne
 #endif // THREADING_THREAD_POOL_HPP

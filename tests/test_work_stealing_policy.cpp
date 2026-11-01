@@ -8,7 +8,7 @@
  * This file is part of Threading, licensed under GPL-3.0-or-later.
  */
 #include "ariadne-testing.hpp"
-#include "threading/work_stealing_pool.hpp"
+#include "threading/thread_pool.hpp"
 #include "threading/task_group.hpp"
 #include <atomic>
 #include <chrono>
@@ -21,12 +21,12 @@
 using namespace Ariadne;
 using namespace std::chrono_literals;
 
-class TestWorkStealingPool : public Ariadne::Testing::ContextFixture {
+class TestWorkStealingPolicy : public Ariadne::Testing::ContextFixture {
   public:
     using ContextFixture::ContextFixture;
 
     void test_zero_workers_help() {
-        WorkStealingPool pool(0);
+        ThreadPool pool(0,SchedulingPolicy::WorkStealing);
         TaskGroup group(pool);
         auto value = group.fork([] { return 42; });
         ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{1});
@@ -37,7 +37,7 @@ class TestWorkStealingPool : public Ariadne::Testing::ContextFixture {
     }
 
     void test_worker_executes_external_submission() {
-        WorkStealingPool pool(2);
+        ThreadPool pool(2,SchedulingPolicy::WorkStealing);
         std::promise<void> signal;
         auto done = signal.get_future();
         const auto caller = std::this_thread::get_id();
@@ -52,7 +52,7 @@ class TestWorkStealingPool : public Ariadne::Testing::ContextFixture {
     }
 
     void test_recursive_fork_join_single_worker() {
-        WorkStealingPool pool(1);
+        ThreadPool pool(1,SchedulingPolicy::WorkStealing);
         std::function<int(unsigned)> tree;
         tree = [&](unsigned depth) -> int {
             if (depth==0) return 1;
@@ -67,9 +67,9 @@ class TestWorkStealingPool : public Ariadne::Testing::ContextFixture {
     }
 
     void test_multiple_forks_preserve_results() {
-        WorkStealingPool pool(3);
+        ThreadPool pool(3,SchedulingPolicy::WorkStealing);
         TaskGroup group(pool);
-        std::vector<TaskHandle<WorkStealingPool,int>> handles;
+        std::vector<TaskHandle<ThreadPool,int>> handles;
         for(int i=0;i<32;++i) handles.push_back(group.fork([i] { return i*i; }));
         int total=0;
         for(auto const& handle:handles) total+=handle.get();
@@ -78,7 +78,7 @@ class TestWorkStealingPool : public Ariadne::Testing::ContextFixture {
     }
 
     void test_steal_from_busy_worker() {
-        WorkStealingPool pool(2);
+        ThreadPool pool(2,SchedulingPolicy::WorkStealing);
         std::promise<void> enqueued;
         auto ready = enqueued.get_future();
         std::atomic<int> completed{0};
@@ -96,7 +96,7 @@ class TestWorkStealingPool : public Ariadne::Testing::ContextFixture {
     }
 
     void test_join_waits_for_all_after_exception() {
-        WorkStealingPool pool(2);
+        ThreadPool pool(2,SchedulingPolicy::WorkStealing);
         TaskGroup group(pool);
         std::atomic<int> count{0};
         group.fork([&] { ++count; throw std::runtime_error("expected"); });
@@ -106,9 +106,9 @@ class TestWorkStealingPool : public Ariadne::Testing::ContextFixture {
     }
 
     void test_ticket_queue_churn() {
-        WorkStealingPool pool(0);
+        ThreadPool pool(0,SchedulingPolicy::WorkStealing);
         std::atomic<int> executed{0};
-        std::vector<WorkStealingPool::Ticket> tickets;
+        std::vector<ThreadPool::Ticket> tickets;
         tickets.reserve(1024);
         for (size_t i=0;i<1024;++i) {
             tickets.push_back(pool.enqueue_ticket([&executed] { ++executed; }));
@@ -121,12 +121,12 @@ class TestWorkStealingPool : public Ariadne::Testing::ContextFixture {
             ARIADNE_TESTING_PROVE(pool.try_run_task(tickets[i]));
         ARIADNE_TESTING_EXPECT_EQUAL(executed.load(),1024);
         ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
-        for (WorkStealingPool::Ticket const& ticket : tickets)
+        for (ThreadPool::Ticket const& ticket : tickets)
             ARIADNE_TESTING_PROVE(!pool.try_run_task(ticket));
     }
 
     void test_ticket_acquisition_race() {
-        WorkStealingPool pool(2);
+        ThreadPool pool(2,SchedulingPolicy::WorkStealing);
         std::atomic<int> executions{0};
         for (unsigned i=0; i<256; ++i) {
             TaskGroup group(pool);
@@ -143,7 +143,7 @@ class TestWorkStealingPool : public Ariadne::Testing::ContextFixture {
     void test_destructor_drains() {
         std::atomic<int> completed{0};
         {
-            WorkStealingPool pool(2);
+            ThreadPool pool(2,SchedulingPolicy::WorkStealing);
             for(int i=0;i<12;++i) pool.enqueue([&completed] { ++completed; });
         }
         ARIADNE_TESTING_EXPECT_EQUAL(completed.load(),12);
@@ -152,7 +152,7 @@ class TestWorkStealingPool : public Ariadne::Testing::ContextFixture {
     void test_zero_worker_destructor_drains_descendants() {
         std::atomic<int> completed{0};
         {
-            WorkStealingPool pool(0);
+            ThreadPool pool(0,SchedulingPolicy::WorkStealing);
             pool.enqueue([&] {
                 ++completed;
                 pool.enqueue([&completed] { ++completed; });
@@ -162,7 +162,7 @@ class TestWorkStealingPool : public Ariadne::Testing::ContextFixture {
     }
 
     void test_local_helping_while_joining() {
-        WorkStealingPool pool(1);
+        ThreadPool pool(1,SchedulingPolicy::WorkStealing);
         auto root=pool.enqueue([&] {
             TaskGroup group(pool);
             auto child=group.fork([] { return 17; });
@@ -176,17 +176,18 @@ class TestWorkStealingPool : public Ariadne::Testing::ContextFixture {
 };
 
 int main(int argc,char** argv) {
-    ARIADNE_TESTING_SUITE("work_stealing_pool");
-    ARIADNE_TESTING_ADD_TEST(TestWorkStealingPool,test_zero_workers_help);
-    ARIADNE_TESTING_ADD_TEST(TestWorkStealingPool,test_worker_executes_external_submission);
-    ARIADNE_TESTING_ADD_TEST(TestWorkStealingPool,test_recursive_fork_join_single_worker);
-    ARIADNE_TESTING_ADD_TEST(TestWorkStealingPool,test_multiple_forks_preserve_results);
-    ARIADNE_TESTING_ADD_TEST(TestWorkStealingPool,test_steal_from_busy_worker);
-    ARIADNE_TESTING_ADD_TEST(TestWorkStealingPool,test_join_waits_for_all_after_exception);
-    ARIADNE_TESTING_ADD_TEST(TestWorkStealingPool,test_ticket_acquisition_race);
-    ARIADNE_TESTING_ADD_TEST(TestWorkStealingPool,test_ticket_queue_churn);
-    ARIADNE_TESTING_ADD_TEST(TestWorkStealingPool,test_destructor_drains);
-    ARIADNE_TESTING_ADD_TEST(TestWorkStealingPool,test_zero_worker_destructor_drains_descendants);
-    ARIADNE_TESTING_ADD_TEST(TestWorkStealingPool,test_local_helping_while_joining);
+    (void)ThreadManager::instance();
+    ARIADNE_TESTING_SUITE("work_stealing_policy");
+    ARIADNE_TESTING_ADD_TEST(TestWorkStealingPolicy,test_zero_workers_help);
+    ARIADNE_TESTING_ADD_TEST(TestWorkStealingPolicy,test_worker_executes_external_submission);
+    ARIADNE_TESTING_ADD_TEST(TestWorkStealingPolicy,test_recursive_fork_join_single_worker);
+    ARIADNE_TESTING_ADD_TEST(TestWorkStealingPolicy,test_multiple_forks_preserve_results);
+    ARIADNE_TESTING_ADD_TEST(TestWorkStealingPolicy,test_steal_from_busy_worker);
+    ARIADNE_TESTING_ADD_TEST(TestWorkStealingPolicy,test_join_waits_for_all_after_exception);
+    ARIADNE_TESTING_ADD_TEST(TestWorkStealingPolicy,test_ticket_acquisition_race);
+    ARIADNE_TESTING_ADD_TEST(TestWorkStealingPolicy,test_ticket_queue_churn);
+    ARIADNE_TESTING_ADD_TEST(TestWorkStealingPolicy,test_destructor_drains);
+    ARIADNE_TESTING_ADD_TEST(TestWorkStealingPolicy,test_zero_worker_destructor_drains_descendants);
+    ARIADNE_TESTING_ADD_TEST(TestWorkStealingPolicy,test_local_helping_while_joining);
     return ARIADNE_TESTING_RUN_TESTS_WITH_ARGS(argc,argv);
 }
