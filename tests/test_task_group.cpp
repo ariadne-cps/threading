@@ -23,6 +23,7 @@
 #include "threading/task_group.hpp"
 
 #include <atomic>
+#include <chrono>
 #include <functional>
 #include <stdexcept>
 #include <thread>
@@ -123,10 +124,18 @@ class TestTaskGroup : public Ariadne::Testing::ContextFixture {
         }
         manager.set_concurrency(1);
         auto calling_thread = std::this_thread::get_id();
+        std::atomic<bool> started{false};
         {
             TaskGroup group(manager);
-            auto result = group.fork([] { return std::this_thread::get_id(); });
-            // A started worker may finish before the caller begins waiting.
+            auto result = group.fork([&started] {
+                auto worker_id = std::this_thread::get_id();
+                started.store(true);
+                return worker_id;
+            });
+            // Observe asynchronous start before helping: this guarantees
+            // that the task was actually dispatched to a worker.
+            ARIADNE_TESTING_EXPECT_ATOMIC(started,
+                [](bool value) { return value; },std::chrono::seconds(10));
             ARIADNE_TESTING_PROVE(result.get()!=calling_thread);
             group.join();
         }
