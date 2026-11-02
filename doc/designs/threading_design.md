@@ -564,3 +564,32 @@ optimization is introduced by this change. Benchmark 0/1/4 workers
 with `--tasks 16384 --work 1 --samples 9`, then validate at
 larger grain size and compare the existing recursive cutoff sweep
 before any further performance claim.
+
+
+## Same-binary callback/ticket comparison (2026-11-02)
+
+The Release `handle-compare` experiment used 16,384 iterations,
+work=1, nine samples, and one warmed pool per paired sample.
+
+| Workers | Callback median ms | Direct median ms | TaskGroup median ms | Paired direct - callback ns/fork | Paired group - direct ns/fork |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | 4.957 | 4.489 | 5.020 | -28.7 | +31.5 |
+| 1 | 35.960 | 32.505 | 36.762 | -225.2 | +335.4 |
+| 4 | 52.726 | 48.900 | 50.346 | -173.8 | +52.5 |
+
+Median absolute deviation (ms): callback 0.015/0.835/2.518,
+direct 0.010/1.237/1.172, group 0.031/0.928/0.673, respectively
+for 0/1/4 workers. Paired differences above are the medians of
+within-sample differences, not differences between median times.
+
+All three paired comparisons favor direct-ticket acquisition in the
+current binary. The callback path uses the current TaskHandle layout,
+not the historical binary; the test does not prove historical
+whole-library speedup. Group-versus-handle differences are not
+isolated group bookkeeping costs. The CI for `dd18720` passed
+Ubuntu, macOS, Windows, Coverage and Sanitizers.
+
+Decision: retain the direct-ticket acquisition path and the generic
+callback constructor. Do not assume the differences are solely due to
+allocations. Next compare work=128/1024 and recursive cutoffs before
+further algorithmic changes.
