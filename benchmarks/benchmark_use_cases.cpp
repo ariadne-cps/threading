@@ -16,6 +16,7 @@
  *  GNU General Public License for more details.
  */
 
+#include "threading/parallel.hpp"
 #include "threading/parallel_first.hpp"
 #include "threading/task_graph.hpp"
 #include "threading/thread_manager.hpp"
@@ -72,7 +73,9 @@ Options parse_options(int argc,char** argv) {
                 << "                   1 reproduces the original one-item-per-stage DAG\n"
                 << "  --samples N   odd 3..101 (default 7)\n"
                 << "The CDCL case is a portfolio analogue, NOT a satisfiability solver.\n"
-                << "DNN workloads are CPU dense forward/gradient kernels, NOT training a model.\n";
+                << "DNN workloads compare TaskGraph and grouped parallel_for with\n"
+                << "identical per-sample math, but different execution schedules.\n"
+                << "They are CPU dense kernels, NOT training a model.\n";
             std::exit(0);
         }
         if(i+1>=argc)
@@ -163,6 +166,39 @@ void print_pair(std::string const& mode,Options const& options,
     if(parallel.median_ms>0.0)
         std::cout << "  median ratio sequential/parallel: "
                   << serial.median_ms/parallel.median_ms << "x\n";
+}
+
+// Report all DNN implementations against the same sequential reference.
+// The graph uses separate stage nodes and ready-queue scheduling; the
+// parallel_for version fuses each group's stages into a single callback.
+// Both perform identical per-sample arithmetic, but may differ in cache
+// locality as well as scheduling overhead.
+void print_dnn_comparison(std::string const& mode,Options const& options,
+                          Statistics serial,Statistics graph,Statistics fused,
+                          std::size_t graph_nodes,std::size_t groups) {
+    std::cout << std::fixed << std::setprecision(5)
+              << "mode=" << mode << " workers=" << options.workers
+              << " cases=" << options.cases << " samples=" << options.samples
+              << " batch_grain=" << options.batch_grain
+              << " graph_nodes=" << graph_nodes
+              << " groups=" << groups << '\n';
+    auto print_stats=[](char const* label,Statistics result) {
+        std::cout << "  " << label << " median/min/max/MAD ms: "
+                  << result.median_ms << '/' << result.min_ms << '/'
+                  << result.max_ms << '/' << result.mad_ms << '\n';
+    };
+    print_stats("sequential",serial);
+    print_stats("task_graph",graph);
+    print_stats("parallel_for",fused);
+    if(graph.median_ms>0.0)
+        std::cout << "  median ratio sequential/task_graph: "
+                  << serial.median_ms/graph.median_ms << "x\n";
+    if(fused.median_ms>0.0) {
+        std::cout << "  median ratio sequential/parallel_for: "
+                  << serial.median_ms/fused.median_ms << "x\n";
+        std::cout << "  median ratio task_graph/parallel_for: "
+                  << graph.median_ms/fused.median_ms << "x\n";
+    }
 }
 
 // CDCL analogue: independent search strategies, exactly one conclusive
@@ -300,7 +336,8 @@ void benchmark_dnn(Options const& options,bool gradient) {
     const std::size_t batch=options.cases;
     Network network(batch);
     WorkState reference_state(batch,gradient);
-    WorkState parallel_state(batch,gradient);
+    WorkState graph_state(batch,gradient);
+    WorkState for_state(batch,gradient);
     ThreadPool pool(options.workers);
 
     auto sequential=[&] {
@@ -311,10 +348,10 @@ void benchmark_dnn(Options const& options,bool gradient) {
         }
     };
 
-    // Each group has a dependency chain hidden -> output -> gradient.
-    // Samples within a group are independent: grouping changes only task
-    // granularity, not the arithmetic order within any individual sample.
-    // In particular, --batch-grain 1 recreates the original task graph.
+
+    // The graph retains separate hidden -> output -> gradient nodes per
+    // group, while parallel_for runs all three stages per sample inside
+    // one callback per group. The numerical work is otherwise identical.
     const std::size_t grain=options.batch_grain;
     const std::size_t groups=1u+(batch-1u)/grain;
     TaskGraph graph;
@@ -323,44 +360,69 @@ void benchmark_dnn(Options const& options,bool gradient) {
         const std::size_t end=begin+std::min(grain,batch-begin);
         auto hidden=graph.add_task([&,begin,end] {
             for(std::size_t b=begin;b<end;++b)
-                dense_hidden(network,parallel_state,b);
+                dense_hidden(network,graph_state,b);
         });
         auto output=graph.add_task([&,begin,end] {
             for(std::size_t b=begin;b<end;++b)
-                dense_output(network,parallel_state,b);
+                dense_output(network,graph_state,b);
         });
         graph.add_dependency(hidden,output);
         if(gradient) {
             auto backward=graph.add_task([&,begin,end] {
                 for(std::size_t b=begin;b<end;++b)
-                    dense_gradient(network,parallel_state,b);
+                    dense_gradient(network,graph_state,b);
             });
             graph.add_dependency(output,backward);
         }
     }
-    auto concurrent=[&] { graph.run(pool,ParallelOptions{1u,0u}); };
+    auto concurrent_graph=[&] { graph.run(pool,ParallelOptions{1u,0u}); };
+    auto concurrent_for=[&] {
+        parallel_for(pool,0u,groups,[&](std::size_t group) {
+            const std::size_t begin=group*grain;
+            const std::size_t end=begin+std::min(grain,batch-begin);
+            for(std::size_t b=begin;b<end;++b) {
+                dense_hidden(network,for_state,b);
+                dense_output(network,for_state,b);
+                if(gradient)dense_gradient(network,for_state,b);
+            }
+        },ParallelOptions{1u,0u});
+    };
 
+    // Construct the graph and allocate all output buffers before timing.
     sequential();
-    concurrent();
+    concurrent_graph();
+    concurrent_for();
     const auto checksum=fingerprint(reference_state);
-    if(fingerprint(parallel_state)!=checksum || pool.queue_size()!=0u)
-        throw std::runtime_error("DNN warm-up checksum or queue mismatch");
+    if(fingerprint(graph_state)!=checksum ||
+       fingerprint(for_state)!=checksum || pool.queue_size()!=0u)
+        throw std::runtime_error("DNN warm-up fingerprint or queue mismatch");
 
-    std::vector<double> seq_times,par_times;
+    std::vector<double> seq_times,graph_times,for_times;
+    seq_times.reserve(options.samples);
+    graph_times.reserve(options.samples);
+    for_times.reserve(options.samples);
     for(unsigned sample=0u;sample<options.samples;++sample) {
-        if(sample%2u==0u) {
-            seq_times.push_back(timed(sequential));
-            par_times.push_back(timed(concurrent));
-        } else {
-            par_times.push_back(timed(concurrent));
-            seq_times.push_back(timed(sequential));
+        // Rotate order to reduce systematic warm-cache and frequency bias.
+        // Each timing includes execution/dispatch, but not fingerprinting.
+        auto time_serial=[&] { seq_times.push_back(timed(sequential)); };
+        auto time_graph=[&] { graph_times.push_back(timed(concurrent_graph)); };
+        auto time_for=[&] { for_times.push_back(timed(concurrent_for)); };
+        switch(sample%3u) {
+          case 0u:
+            time_serial(); time_graph(); time_for(); break;
+          case 1u:
+            time_graph(); time_for(); time_serial(); break;
+          default:
+            time_for(); time_serial(); time_graph(); break;
         }
         if(fingerprint(reference_state)!=checksum ||
-           fingerprint(parallel_state)!=checksum || pool.queue_size()!=0u)
-            throw std::runtime_error("DNN sample checksum or queue mismatch");
+           fingerprint(graph_state)!=checksum ||
+           fingerprint(for_state)!=checksum || pool.queue_size()!=0u)
+            throw std::runtime_error("DNN sample fingerprint or queue mismatch");
     }
-    print_pair(gradient?"dnn-gradient":"dnn-forward",
-               options,stats(seq_times),stats(par_times),graph.size());
+    print_dnn_comparison(gradient?"dnn-gradient":"dnn-forward",
+                         options,stats(seq_times),stats(graph_times),
+                         stats(for_times),graph.size(),groups);
 }
 
 } // namespace

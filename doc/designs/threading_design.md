@@ -1306,3 +1306,34 @@ are unchanged. Benchmark comparison should sweep batch-grain values
 (1, 4, 8, 16, 32, 64, 128) and worker counts (0, 1, 2, 4),
 without assuming speedups before measurement. This is a benchmark-only
 change; no runtime or CI modifications.
+
+
+## DNN TaskGraph versus grouped parallel_for comparison (2026-11-02)
+
+The DNN benchmark now reports three implementations using the same
+small CPU kernels, network inputs and batch size: serial processing,
+`TaskGraph` with independent per-group hidden -> output -> optional
+gradient stage nodes, and `parallel_for` that runs all these stages
+for each sample inside one grouped callback. The `--batch-grain`
+parameter determines the number of samples per graph stage node and
+per `parallel_for` group. For both parallel alternatives, the same
+pre-existing `ThreadPool` is used, with zero or more dedicated workers
+and the calling thread participating in the execution. The graph and
+buffers are constructed before timing; each timed interval includes
+scheduling, computation, and completion/join work.
+
+Independent output buffers and bitwise fingerprints validate both
+parallel implementations against the same sequential reference on
+warm-up and after every measurement sample. The pool queue is checked
+empty each time. Measurements rotate the ordering of all three paths
+across samples to reduce systematic cache/frequency advantage of any
+single implementation. Reported medians, min, max, MAD and ratios are:
+sequential/TaskGraph, sequential/parallel_for, and
+TaskGraph/parallel_for. The CDCL benchmark remains unchanged.
+
+This comparison does **not** isolate graph scheduling overhead in
+isolation: fusion also modifies stage-locality, temporary-data cache
+reuse, and possible interleaving of independent groups. It measures
+two practically valid schedules with identical per-sample arithmetic,
+not a fully controlled microbenchmark of dependency bookkeeping.
+The README and CI workflows are unchanged.
