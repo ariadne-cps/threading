@@ -477,3 +477,53 @@ worker/zero-worker execution, tickets and deep recursion.
 **Status:** benchmark candidate, no new local measurements; new CI
 and sanitizers pending. Re-run `breakdown` and the 0/1/4-worker
 `micro` matrix before accepting or rejecting this version.
+
+
+## Direct-ticket TaskHandle results and public umbrella (2026-11-02)
+
+User-reported local Release breakdown for the direct-ticket candidate
+(`fa0c13c`): `--mode breakdown --concurrency 0 --tasks 16384 --work 1
+--samples 9`. Compare against the preceding inline-joiner version
+(`114f5d4`) on the same user's machine, with all figures in their
+respective independent runs:
+
+| Stage | Before median (ms) | After median (ms) | Before paired ns/iter | After paired ns/iter |
+| --- | ---: | ---: | ---: | ---: |
+| Sequential | 0.025 | 0.025 | 0.0 | 0.0 |
+| Future only | 1.616 | 1.585 | 97.1 | 95.3 |
+| Ticket only | 1.345 | 1.333 | 80.6 | 79.9 |
+| Handle, no group | 4.077 | 3.718 | 247.3 | 225.5 |
+| TaskGroup | 5.683 | 4.912 | 345.4 | 298.3 |
+
+The full group path decreased by 47.1 ns/iteration (about 13.6%
+of the previous overhead) and the tracked handle path by 21.8
+ns/iteration (about 8.8%). The TaskGroup minus manual handle
+difference decreased from 98.1 to 72.8 ns/iteration, but these
+paths overlap and cannot isolate an allocation. Run-to-run
+variation, compiler differences between instantiated paths and
+different capture/copy costs remain possible. These numbers
+support keeping direct tickets as a promising candidate, not
+a universal speedup or a completed performance verification.
+Ubuntu, macOS, Coverage and Sanitizers had passed for
+`fa0c13c` at the last review; Windows was still running.
+The recursive-cutoff and 0/1/4-worker micro matrix on this
+revision remain unmeasured.
+
+As requested, `include/ariadne-threading.hpp` now exposes the
+public Threading headers via one include. It deliberately
+includes all twelve headers directly under `include/threading/`
+so the aggregate remains auditable as the API grows, and does
+not add test-only or private implementation headers. The
+configuration's `ariadne_register_public_headers(FILES ...)`
+mechanism registers it for the same bundle destination as
+`threading/` and its public dependencies. A new CTest
+executable includes this header first and checks representative
+API usage; Ubuntu Release CI independently compiles a translation
+unit against the *installed* umbrella and header bundle.
+
+**Status at commit creation:** umbrella and documentation edits
+published, installation and CTest CI results pending.
+Next steps are to confirm the CI and re-run the full micro
+matrix to determine whether the direct-ticket path improves
+the parallel workloads; do not introduce additional scheduler
+complexity based solely on the zero-worker result.

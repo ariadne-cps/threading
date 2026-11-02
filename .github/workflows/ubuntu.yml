@@ -68,6 +68,14 @@ jobs:
         if: matrix.build_type == 'Release'
         run: cmake --install "${{ runner.workspace }}/build" --prefix "${{ runner.workspace }}/install"
 
+      - name: Check installed umbrella header
+        if: matrix.build_type == 'Release'
+        run: |
+          prefix="${{ runner.workspace }}/install/include/ariadne-threading"
+          test -f "$prefix/ariadne-threading.hpp"
+          printf '#include "ariadne-threading.hpp"\nint main() { return 0; }\n' |
+            "${{ matrix.config.cxx }}" -std=c++20 -x c++ -fsyntax-only -I "$prefix" -
+
       - name: Build Debug tests
         if: matrix.build_type == 'Debug'
         run: cmake --build "${{ runner.workspace }}/build" --parallel "$NPROC" --target tests

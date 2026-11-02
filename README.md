@@ -23,6 +23,18 @@ A small C++20 library for thread management, thread pools, buffered workers and 
 - Work submitted from external threads enters a global FIFO, periodically serviced by workers to reduce starvation of independent callers. See [the concurrency design](doc/designs/threading_design.md).
 - Coverage support on Ubuntu/GCC and macOS/AppleClang.
 
+## Public headers
+
+A single umbrella header includes the complete Threading public API:
+
+```cpp
+#include "ariadne-threading.hpp"
+```
+
+Individual headers under `threading/` remain available for minimal
+dependencies. The umbrella is installed alongside the `threading/`
+directory under `include/ariadne-threading/`.
+
 ## Command-line interface
 
 `ThreadingCommandLineInterface` derives from `LoggingCommandLineInterface`,
@@ -43,9 +55,9 @@ A C++20 compiler, CMake and pthread support are required.
 
 ## Tests
 
-All ten CTest executables use [Ariadne Testing](https://github.com/ariadne-cps/testing),
-pinned in `ss/tst` and linked only to test targets. The suite contains
-100 independently reported cases, preserving the original test order,
+The CTest executables use [Ariadne Testing](https://github.com/ariadne-cps/testing),
+pinned in `ss/tst` and linked only to test targets. The suite preserves the existing test cases and adds a public-header
+smoke test, retaining the original test order,
 expected exceptions, smoke operations and concurrency scenarios.
 The CTest command uses `--concise`, while direct execution defaults to full diagnostics.
 

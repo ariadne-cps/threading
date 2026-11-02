@@ -54,6 +54,7 @@ endif()
 ariadne_register_public_headers(
     TARGET threading
     DIRECTORIES "${PROJECT_SOURCE_DIR}/include/threading"
+    FILES "${PROJECT_SOURCE_DIR}/include/ariadne-threading.hpp"
 )
 
 setup_project_library(

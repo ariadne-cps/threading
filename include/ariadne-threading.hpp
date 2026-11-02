@@ -1,0 +1,40 @@
+/***************************************************************************
+ *            ariadne-threading.hpp
+ *
+ *  Copyright  2026  Luca Geretti
+ *
+ ****************************************************************************/
+/*
+ *  This file is part of Threading.
+ *
+ *  Threading is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, either version 3 of the License, or
+ *  (at your option) any later version.
+ *
+ *  Threading is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with Threading. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+#ifndef ARIADNE_THREADING_UMBRELLA_HPP
+#define ARIADNE_THREADING_UMBRELLA_HPP
+
+#include "threading/buffer.hpp"
+#include "threading/buffered_thread.hpp"
+#include "threading/task_group.hpp"
+#include "threading/templates.hpp"
+#include "threading/thread.hpp"
+#include "threading/thread_manager.hpp"
+#include "threading/thread_pool.hpp"
+#include "threading/threading_command_line_interface.hpp"
+#include "threading/using.hpp"
+#include "threading/workload.hpp"
+#include "threading/workload_advancement.hpp"
+#include "threading/workload_interface.hpp"
+
+#endif // ARIADNE_THREADING_UMBRELLA_HPP
