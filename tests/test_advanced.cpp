@@ -142,6 +142,27 @@ class TestAdvanced : public Ariadne::Testing::ContextFixture {
         }
     }
 
+    void test_graph_with_shared_spawn_budget() {
+        for(unsigned workers : {0u,1u,4u}) {
+            ThreadPool pool(workers);
+            ConcurrencyBudget budget(1u);
+            TaskGraph graph;
+            std::atomic<unsigned> count{0u};
+            auto root=graph.add_task([&] {
+                parallel_for(pool,0u,8u,[&](std::size_t) { ++count; },
+                             ParallelOptions{1u,5u,std::nullopt,&budget});
+            });
+            for(unsigned i=0u;i<8u;++i) {
+                auto child=graph.add_task([&] { ++count; });
+                graph.add_dependency(root,child);
+            }
+            graph.run(pool,ParallelOptions{1u,5u,std::nullopt,&budget});
+            ARIADNE_TESTING_EXPECT_EQUAL(count.load(),16u);
+            ARIADNE_TESTING_EXPECT_EQUAL(budget.available(),size_t{1});
+            ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
+        }
+    }
+
     void test_graph_cycle_invalid_and_exception() {
         ThreadPool pool(2);
         TaskGraph graph;
@@ -173,5 +194,6 @@ int main(int argc,char** argv) {
     ARIADNE_TESTING_ADD_TEST(TestAdvanced,test_graph_ready_without_global_wave_barrier);
     ARIADNE_TESTING_ADD_TEST(TestAdvanced,test_graph_stop_before_run_and_resume);
     ARIADNE_TESTING_ADD_TEST(TestAdvanced,test_graph_stop_from_node);
+    ARIADNE_TESTING_ADD_TEST(TestAdvanced,test_graph_with_shared_spawn_budget);
     return ARIADNE_TESTING_RUN_TESTS_WITH_ARGS(argc,argv);
 }

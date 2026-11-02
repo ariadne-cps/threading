@@ -240,6 +240,52 @@ class TestParallel : public Ariadne::Testing::ContextFixture {
         }
     }
 
+    void test_shared_spawn_budget_nested() {
+        for(unsigned workers : {0u,1u,4u}) {
+            ThreadPool pool(workers);
+            ConcurrencyBudget budget(1u);
+            std::atomic<unsigned> visited{0u};
+            parallel_for(pool,0u,8u,[&](std::size_t) {
+                parallel_for(pool,0u,16u,[&](std::size_t) {
+                    ++visited;
+                },ParallelOptions{1u,5u,std::nullopt,&budget});
+            },ParallelOptions{1u,5u,std::nullopt,&budget});
+            ARIADNE_TESTING_EXPECT_EQUAL(visited.load(),128u);
+            ARIADNE_TESTING_EXPECT_EQUAL(budget.available(),size_t{1});
+            auto result=parallel_reduce(pool,0u,64u,0u,
+                [](std::size_t)->unsigned { return 1u; },
+                [](unsigned a,unsigned b) { return a+b; },
+                ParallelOptions{1u,5u,std::nullopt,&budget});
+            ARIADNE_TESTING_EXPECT_EQUAL(result,64u);
+            auto fixed=parallel_reduce_fixed_blocks(pool,0u,64u,0u,
+                [](std::size_t)->unsigned { return 1u; },
+                [](unsigned a,unsigned b) { return a+b; },
+                ParallelOptions{4u,5u,std::nullopt,&budget});
+            ARIADNE_TESTING_EXPECT_EQUAL(fixed,64u);
+            ARIADNE_TESTING_EXPECT_EQUAL(budget.available(),size_t{1});
+            ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
+        }
+    }
+
+    void test_budget_exhaustion_and_exception_release() {
+        ThreadPool pool(2);
+        ConcurrencyBudget budget(1u);
+        auto held=budget.try_acquire();
+        ARIADNE_TESTING_PROVE(bool(held));
+        std::atomic<unsigned> hit{0u};
+        parallel_for(pool,0u,23u,[&](std::size_t) { ++hit; },
+                     ParallelOptions{1u,3u,std::nullopt,&budget});
+        ARIADNE_TESTING_EXPECT_EQUAL(hit.load(),23u);
+        ARIADNE_TESTING_EXPECT_EQUAL(budget.available(),size_t{0});
+        held->release();
+        ARIADNE_TESTING_EXPECT_EXCEPTION(parallel_for(pool,0u,32u,
+            [](std::size_t i) {
+                if(i==0u)throw std::runtime_error("expected");
+            },ParallelOptions{1u,3u,std::nullopt,&budget}));
+        ARIADNE_TESTING_EXPECT_EQUAL(budget.available(),size_t{1});
+        ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
+    }
+
     void test_portfolio_stop() {
         for(unsigned workers : {0u,2u}) {
             ThreadPool pool(workers);
@@ -294,6 +340,8 @@ int main(int argc,char** argv) {
     ARIADNE_TESTING_ADD_TEST(TestParallel,test_fixed_block_reduce_exceptions_and_rounding);
     ARIADNE_TESTING_ADD_TEST(TestParallel,test_cooperative_parallel_cancellation);
     ARIADNE_TESTING_ADD_TEST(TestParallel,test_cooperative_reduce_stop_during_work);
+    ARIADNE_TESTING_ADD_TEST(TestParallel,test_shared_spawn_budget_nested);
+    ARIADNE_TESTING_ADD_TEST(TestParallel,test_budget_exhaustion_and_exception_release);
     ARIADNE_TESTING_ADD_TEST(TestParallel,test_portfolio_stop);
     ARIADNE_TESTING_ADD_TEST(TestParallel,test_portfolio_exception_and_scope_join);
     return ARIADNE_TESTING_RUN_TESTS_WITH_ARGS(argc,argv);

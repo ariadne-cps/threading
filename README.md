@@ -21,7 +21,7 @@ The three reference use cases are **BDD (Binary Decision Diagrams)** for recursi
 - CPU `parallel_for`, `parallel_reduce`, and fixed-block reductions with bounded work partitioning and scoped per-lane rounding modes.
 - Dependency-aware CPU task graphs through `TaskGraph`, dispatching nodes as their prerequisites finish and supporting cooperative stop.
 - Bounded FIFO communication through `BoundedChannel`, including closure and stop-aware waits.
-- Shared admission limits through RAII `ConcurrencyBudget` permits.
+- Shared nonblocking spawning limits through RAII `ConcurrencyBudget` permits.
 - Thread-safe workload progress tracking and integration with Logging.
 - Public headers available individually or through `ariadne-threading.hpp`.
 

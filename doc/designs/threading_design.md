@@ -1210,3 +1210,32 @@ requested by a callback during execution, queue draining, zero/one/
 multiple workers and unchanged no-stop call sites. This is a
 cooperative per-operation contract, NOT preemption of arbitrary
 user callbacks or a global reservation against nested parallelism.
+
+
+## Shared nonblocking spawn budget for nested CPU parallelism (2026-11-02)
+
+`ParallelOptions::spawn_budget` optionally points to a caller-owned
+`ConcurrencyBudget`. Its permits are acquired with `try_acquire`
+before submitting extra execution lanes; no worker waits for
+capacity and the caller remains one lane even when no permit is
+available. `LaneReservation` retains move-only RAII permits until all
+lanes have completed (including exceptional exits). Permits count
+additional queued lanes rather than physical cores or callable
+invocations, and the shared budget must outlive the invocation.
+
+The option is honored by `parallel_for`, `parallel_reduce`,
+`parallel_reduce_fixed_blocks` (by forwarding its options to block
+execution), and `TaskGraph`. Existing calls without a budget have
+unchanged lane counts. Within a shared budget, nested invocations
+can fall back to one caller lane rather than blocking on the pool,
+avoiding a common permit-starvation deadlock. The actual count of
+simultaneously executing user callbacks is NOT globally bounded
+by this budget: nested invocations execute in existing caller lanes,
+and other ThreadPool users are outside it. This is an admission
+limit for *extra enqueued lanes*, not a global CPU quota.
+
+Tests exercise nested loops, nested graphs, 0/1/4 worker pools,
+an exhausted budget, normal completion and exception cleanup.
+Benchmarking is still required to determine appropriate budget
+capacities for BDD, CDCL and DNN; shared permits are intentionally
+not imposed implicitly on existing applications.

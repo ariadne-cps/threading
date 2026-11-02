@@ -31,6 +31,7 @@
 #include <utility>
 #include <vector>
 
+#include "threading/concurrency_budget.hpp"
 #include "threading/floating_point_environment.hpp"
 #include "threading/task_group.hpp"
 #include "threading/thread_pool.hpp"
@@ -48,11 +49,16 @@ class ParallelOperationCancelled : public std::runtime_error {
 //! Limits for CPU data parallelism. max_tasks counts the caller as one lane.
 //! Zero max_tasks uses at most pool.num_threads()+1 lanes. A lane owns a
 //! contiguous partition, keeping task count bounded even for huge ranges.
-//! This is a per-call limit, not a reservation against nested submissions.
+//! Without spawn_budget, this is a per-call limit, not a reservation
+//! against nested submissions. An optional shared spawn_budget provides
+//! nonblocking permits for additional queued lanes; the caller never needs
+//! a permit and always executes when no permit is available. It does not
+//! constrain external threads, physical cores, or other scheduler clients.
 struct ParallelOptions {
     std::size_t grain_size=256u;
     std::size_t max_tasks=0u;
     std::optional<int> rounding_mode=std::nullopt;
+    ConcurrencyBudget* spawn_budget=nullptr;
 };
 
 namespace parallel_detail {
@@ -69,6 +75,33 @@ inline std::size_t lane_count(ThreadPool const& scheduler,
         ? available : std::min(options.max_tasks,available);
     return std::min(chunks,requested);
 }
+
+//! Keep one permit for every additional lane until its task has joined.
+//! No worker waits to acquire a permit: under contention callers reduce
+//! the number of lanes, down to fully serial execution if necessary.
+//! The optional budget must outlive this operation.
+class LaneReservation {
+  public:
+    LaneReservation(ThreadPool const& scheduler,std::size_t count,
+                    ParallelOptions const& options)
+        : _lanes(lane_count(scheduler,count,options)) {
+        if(options.spawn_budget && _lanes>1u) {
+            _permits.reserve(_lanes-1u);
+            for(std::size_t i=1u;i<_lanes;++i) {
+                auto permit=options.spawn_budget->try_acquire();
+                if(!permit)break;
+                _permits.push_back(std::move(*permit));
+            }
+            _lanes=1u+_permits.size();
+        }
+    }
+
+    std::size_t lanes() const noexcept { return _lanes; }
+
+  private:
+    std::size_t _lanes;
+    std::vector<ConcurrencyBudget::Permit> _permits;
+};
 
 inline std::pair<std::size_t,std::size_t>
 lane_interval(std::size_t count,std::size_t lanes,std::size_t lane) {
@@ -117,7 +150,8 @@ void parallel_for(ThreadPool& scheduler,std::size_t first,
     if(first>last)
         throw std::invalid_argument("parallel_for: first exceeds last");
     const auto count=last-first;
-    const auto lanes=parallel_detail::lane_count(scheduler,count,options);
+    parallel_detail::LaneReservation reservation(scheduler,count,options);
+    const auto lanes=reservation.lanes();
     if(lanes==0u)return;
     if(stop.stop_requested())throw ParallelOperationCancelled();
     std::atomic<bool> failed{false};
@@ -159,7 +193,8 @@ T parallel_reduce(ThreadPool& scheduler,std::size_t first,
     if(first>last)
         throw std::invalid_argument("parallel_reduce: first exceeds last");
     const auto count=last-first;
-    const auto lanes=parallel_detail::lane_count(scheduler,count,options);
+    parallel_detail::LaneReservation reservation(scheduler,count,options);
+    const auto lanes=reservation.lanes();
     if(lanes==0u)return identity;
     if(stop.stop_requested())throw ParallelOperationCancelled();
     std::vector<T> partials(lanes,identity);
@@ -223,7 +258,8 @@ T parallel_reduce_fixed_blocks(ThreadPool& scheduler,std::size_t first,
     std::vector<T> partials(blocks,identity);
     // Parallelise the blocks, not the individual elements. The assignment
     // of blocks to execution lanes never changes arithmetic grouping.
-    auto block_options=ParallelOptions{1u,options.max_tasks,options.rounding_mode};
+    auto block_options=ParallelOptions{1u,options.max_tasks,options.rounding_mode,
+                                       options.spawn_budget};
     parallel_for(scheduler,0u,blocks,[&](std::size_t block) {
         const auto offset=block*options.grain_size;
         const auto end=offset+std::min(options.grain_size,count-offset);

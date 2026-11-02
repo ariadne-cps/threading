@@ -127,7 +127,8 @@ class TaskGraph {
             std::lock_guard lock(mutex);
             changed.notify_all();
         });
-        const auto lanes=parallel_detail::lane_count(scheduler,count,options);
+        parallel_detail::LaneReservation reservation(scheduler,count,options);
+        const auto lanes=reservation.lanes();
         auto execute=[&](std::size_t) {
             for(;;) {
                 TaskId id;
