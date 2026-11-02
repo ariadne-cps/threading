@@ -9,6 +9,13 @@
 
 A small C++20 library for thread management, thread pools, buffered workers and concurrent workloads, with integration with [Logging](https://github.com/ariadne-cps/logging).
 
+The three reference use cases are **BDD**, **CDCL**, and **DL**:
+- **BDD**: structured recursive computations and fork/join.
+- **CDCL**: concurrent satisfiability search, including use as the search engine in SMT solvers; theory reasoning and clause exchange belong to the solver.
+- **DL**: deep learning training and inference, initially CPU data parallelism and reductions.
+
+These are use cases for the library, not application-specific algorithms implemented by Threading.
+
 ## Features
 
 - `Thread`: managed single-shot threads with activation and exception reporting.
@@ -264,7 +271,7 @@ Jobs must **cooperate** with cancellation; there is no forced
 interruption. `StopTaskGroup` is scoped and non-reusable after a stop
 request; the owning thread submits and joins jobs, while other
 threads may call `request_stop()`. The destructor requests stop
-before joining. This does not implement a SAT solver, clause
+before joining. This does not implement a satisfiability or SMT solver, clause
 exchange, work placement, GPU execution, DAG dependencies,
 numeric tensor kernels or dynamic CPU quotas; they remain
 application-specific or later design work.

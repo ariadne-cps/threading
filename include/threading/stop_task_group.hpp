@@ -32,7 +32,8 @@ namespace Ariadne {
 
 //! A scope of long-running jobs that share one cooperative stop request.
 //! The owner alone calls fork() and join(). request_stop() may be called
-//! concurrently by a job, e.g. when a SAT solver finds a conclusive result.
+//! concurrently by a job, e.g. when a CDCL search worker in a
+//! satisfiability or SMT solver finds a conclusive result.
 //! Tasks must check their token; requesting stop never kills a running task.
 //! Destroying the scope requests stop and then joins all outstanding jobs.
 //! A stop request cannot be reset: create a new group for another run.

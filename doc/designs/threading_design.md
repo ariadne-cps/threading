@@ -4,6 +4,22 @@
 
 These are generic C++20 task-execution primitives, independent of any particular application.
 
+The three reference use cases, consistently named throughout future
+design and benchmarking, are:
+
+- **BDD**: recursive and memoized symbolic operations with structured fork/join.
+- **CDCL**: satisfiability-oriented search, including a CDCL-based search
+  engine coupled with theory reasoning in an SMT solver. The term CDCL
+  labels the family of execution needs; it does not limit the runtime to
+  purely propositional solving or prescribe a specific solver architecture.
+- **DL**: deep learning training and inference, including CPU data
+  parallelism, reductions and eventual task dependency orchestration.
+
+The Threading library provides shared concurrency mechanisms, not BDD
+operations, a CDCL or SMT engine, or neural-network operators. Solver
+heuristics, theory propagation, model semantics and accelerators are
+owned by their respective application layers.
+
 ## Execution facilities
 
 - Thread: a managed single-shot thread.
@@ -855,11 +871,11 @@ CI status verified at rollback `d8b0710`: Ubuntu, macOS,
 Windows, Coverage and Sanitizers all passed.
 
 
-## General-purpose CPU primitives for CDCL and deep inference (2026-11-02)
+## General-purpose CPU primitives for BDD, CDCL and DL (2026-11-02)
 
 The intended uses now include BDD fork/join, independent long-lived
-CDCL portfolio solvers, and CPU data-parallel deep-learning
-operations. This does not establish that BDD is performance-complete:
+CDCL search workers (also usable within SMT solvers), and DL training
+and inference through CPU data-parallel operations. This does not establish that BDD is performance-complete:
 realistic BDD ITE with memoization and contention is still unmeasured.
 
 **Implementation, first increment:**
@@ -899,3 +915,20 @@ channels, and benchmarks against realistic CDCL and numerical
 workloads before expanding policy complexity. Actual GPU
 execution belongs in an optional integration layer, not the
 core CPU scheduler.
+
+
+## Terminology clarification for the three use cases (2026-11-02)
+
+Use **BDD**, **CDCL**, and **DL** as the canonical use-case labels for
+future requirements, implementation notes, and benchmarks. In
+particular, **CDCL** means concurrent satisfiability-search workloads,
+including the CDCL-based search layer of an SMT solver; it must not
+be used as shorthand for a particular propositional solver product.
+Theory integration is an application-layer responsibility. **DL**
+covers both deep learning training and inference, initially on the
+CPU; GPU-specific execution remains a distinct integration topic.
+These names do not imply that the three applications have the same
+scheduling or cancellation needs.
+
+This is documentation/terminology alignment only; it does not modify
+scheduling, cancellation behavior, public APIs, or benchmark results.
