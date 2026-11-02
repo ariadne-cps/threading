@@ -9,10 +9,10 @@
 
 A small C++20 library for thread management, thread pools, buffered workers and concurrent workloads, with integration with [Logging](https://github.com/ariadne-cps/logging).
 
-The three reference use cases are **BDD**, **CDCL**, and **DL**:
+The three reference use cases are **BDD**, **CDCL**, and **DNN**:
 - **BDD**: structured recursive computations and fork/join.
 - **CDCL**: concurrent satisfiability search, including use as the search engine in SMT solvers; theory reasoning and clause exchange belong to the solver.
-- **DL**: deep learning training and inference, initially CPU data parallelism and reductions.
+- **DNN (Deep Neural Networks)**: both training and inference, initially CPU data parallelism and reductions.
 
 These are use cases for the library, not application-specific algorithms implemented by Threading.
 

@@ -12,8 +12,8 @@ design and benchmarking, are:
   engine coupled with theory reasoning in an SMT solver. The term CDCL
   labels the family of execution needs; it does not limit the runtime to
   purely propositional solving or prescribe a specific solver architecture.
-- **DL**: deep learning training and inference, including CPU data
-  parallelism, reductions and eventual task dependency orchestration.
+- **DNN (Deep Neural Networks)**: both network training and inference,
+  including CPU data parallelism, reductions and eventual task dependency orchestration.
 
 The Threading library provides shared concurrency mechanisms, not BDD
 operations, a CDCL or SMT engine, or neural-network operators. Solver
@@ -871,10 +871,10 @@ CI status verified at rollback `d8b0710`: Ubuntu, macOS,
 Windows, Coverage and Sanitizers all passed.
 
 
-## General-purpose CPU primitives for BDD, CDCL and DL (2026-11-02)
+## General-purpose CPU primitives for BDD, CDCL and DNN (2026-11-02)
 
 The intended uses now include BDD fork/join, independent long-lived
-CDCL search workers (also usable within SMT solvers), and DL training
+CDCL search workers (also usable within SMT solvers), and DNN training
 and inference through CPU data-parallel operations. This does not establish that BDD is performance-complete:
 realistic BDD ITE with memoization and contention is still unmeasured.
 
@@ -919,16 +919,28 @@ core CPU scheduler.
 
 ## Terminology clarification for the three use cases (2026-11-02)
 
-Use **BDD**, **CDCL**, and **DL** as the canonical use-case labels for
+Use **BDD**, **CDCL**, and **DNN** as the canonical use-case labels for
 future requirements, implementation notes, and benchmarks. In
 particular, **CDCL** means concurrent satisfiability-search workloads,
 including the CDCL-based search layer of an SMT solver; it must not
 be used as shorthand for a particular propositional solver product.
-Theory integration is an application-layer responsibility. **DL**
-covers both deep learning training and inference, initially on the
-CPU; GPU-specific execution remains a distinct integration topic.
+Theory integration is an application-layer responsibility. **DNN**
+means Deep Neural Networks and covers both training and inference,
+initially on the CPU; GPU-specific execution remains a distinct
+integration topic.
 These names do not imply that the three applications have the same
 scheduling or cancellation needs.
 
 This is documentation/terminology alignment only; it does not modify
 scheduling, cancellation behavior, public APIs, or benchmark results.
+
+
+## Terminology update: DNN replaces DL (2026-11-02)
+
+The canonical use cases are now **BDD**, **CDCL**, and **DNN**.
+The latter expands to **Deep Neural Networks**, explicitly covering
+both **training** and **inference** of deep networks. This is a naming
+change only; it does not constrain the DL algorithms, add neural
+network functionality, or modify scheduler behavior. The broader
+term *deep learning* may still be used descriptively where useful,
+but **DNN** is the reference use-case label.
