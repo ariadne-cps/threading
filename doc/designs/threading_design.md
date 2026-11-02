@@ -431,3 +431,49 @@ regression tests added; platform CI and sanitizer outcomes pending.
 Retain or revert based on semantic verification and reproducible
 end-to-end performance, not on the theoretical removal of one
 allocation.
+
+
+## Tracked-ticket handle fast-path experiment (2026-11-02)
+
+The first local comparison after the inline-joiner change (`114f5d4`)
+used `--mode breakdown --concurrency 0 --tasks 16384 --work 1
+--samples 9`. Reported previous vs inline-joiner paths:
+
+| Stage | Previous median (ms) | Inline median (ms) | Previous delta (ns/iteration) | Inline delta (ns/iteration) |
+| --- | ---: | ---: | ---: | ---: |
+| Sequential | 0.025 | 0.025 | 0.0 | 0.0 |
+| Future only | 1.590 | 1.616 | 95.5 | 97.1 |
+| Ticket only | 1.318 | 1.345 | 79.0 | 80.6 |
+| Handle, no group | 4.010 | 4.077 | 243.2 | 247.3 |
+| TaskGroup | 5.799 | 5.683 | 352.4 | 345.4 |
+
+The full TaskGroup path decreased by 7.0 ns/iteration (~2%).
+The TaskGroup-minus-manual-handle difference decreased from
+109.2 to 98.1 ns/iteration (11.1 ns), but these were separate runs
+without randomized/interleaved comparisons or allocation tracing;
+neither reduction can be confidently attributed to avoiding a
+specific allocation. **The inline-joiner change is provisional, not
+a confirmed performance gain.** Ubuntu, macOS, Coverage and
+ASan/UBSan plus TSan passed on `114f5d4` at last check; Windows
+was still queued then.
+
+**New candidate:** `TaskGroup::fork` previously wrapped a
+`ThreadPool::Ticket` in a capturing `std::function<bool()>`,
+which could allocate and was copied when registering its joiner.
+`TaskHandle` now stores a direct ticket in a `std::variant` and
+calls the same `try_run_task(ticket)` when waiting; no acquisition
+callback is needed for ThreadPool/ThreadManager. The public generic
+callable constructor and the fallback for custom scheduler ticket
+types are retained. An empty ticket remains valid for
+ThreadManager's synchronous mode. The manual-handle benchmark stage
+now uses the same direct-ticket path as `TaskGroup`.
+
+The change may increase handle object size even while reducing
+allocator traffic, so the effect is not predictable from code
+inspection alone. Correctness regressions explicitly exercise the
+generic constructor, and existing tests cover exception ordering,
+worker/zero-worker execution, tickets and deep recursion.
+
+**Status:** benchmark candidate, no new local measurements; new CI
+and sanitizers pending. Re-run `breakdown` and the 0/1/4-worker
+`micro` matrix before accepting or rejecting this version.

@@ -33,6 +33,7 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
+#include <variant>
 
 #include "threading/thread_manager.hpp"
 #include "threading/thread_pool.hpp"
@@ -53,17 +54,39 @@ class TaskHandle {
     TaskHandle(Scheduler& scheduler, std::shared_future<Result> future,
                std::function<bool()> try_execute = {})
         : _scheduler(&scheduler), _future(std::move(future)),
-          _try_execute(std::move(try_execute)) { }
+          _acquisition(std::in_place_type<std::function<bool()>>,
+                       std::move(try_execute)) { }
+
+    //! \brief Direct targeted acquisition for the ThreadPool ticket type.
+    //! \details Works with ThreadPool and ThreadManager, including an empty
+    //! ticket from the manager's synchronous execution mode.
+    TaskHandle(Scheduler& scheduler, std::shared_future<Result> future,
+               ThreadPool::Ticket ticket)
+        requires requires(Scheduler& s, ThreadPool::Ticket const& t) {
+            s.try_run_task(t);
+        }
+        : _scheduler(&scheduler), _future(std::move(future)),
+          _acquisition(std::in_place_type<ThreadPool::Ticket>,
+                       std::move(ticket)) { }
 
     //! \brief Wait for completion, helping the scheduler if work is pending.
     void wait() const {
         using namespace std::chrono_literals;
-        if (_try_execute) {
-            // Remove and execute this exact dependency from the scheduler.
-            // A worker can win the dequeue race; then wait for its result.
-            // No redundant task wrapper remains in either scheduler's queue.
+        if constexpr (requires(Scheduler& s, ThreadPool::Ticket const& t) {
+            s.try_run_task(t);
+        }) {
+            if (auto const* ticket=std::get_if<ThreadPool::Ticket>(&_acquisition)) {
+                // The worker and this waiter compete for the same queue entry.
+                if (_future.wait_for(0ms) != std::future_status::ready)
+                    (void)_scheduler->try_run_task(*ticket);
+                _future.wait();
+                return;
+            }
+        }
+        if (auto const& try_execute =
+                std::get<std::function<bool()>>(_acquisition); try_execute) {
             if (_future.wait_for(0ms) != std::future_status::ready)
-                (void)_try_execute();
+                (void)try_execute();
             _future.wait();
             return;
         }
@@ -83,7 +106,9 @@ class TaskHandle {
   private:
     Scheduler* _scheduler;
     std::shared_future<Result> _future;
-    std::function<bool()> _try_execute;
+    // Store one representation, not both: a pool ticket or a generic
+    // type-erased callback, preserving the legacy TaskHandle constructor.
+    std::variant<ThreadPool::Ticket,std::function<bool()>> _acquisition;
 };
 
 //! \brief Group of forked tasks, joined even when the caller leaves by exception.
@@ -115,11 +140,21 @@ class TaskGroup {
         auto future = task->get_future().share();
         // Ticket-based acquisition ensures that both a waiting handle and
         // a worker use the scheduler's single physical queue entry.
-        const auto ticket=_scheduler.enqueue_ticket([task] { (*task)(); });
-        auto try_execute=[scheduler=&_scheduler,ticket] {
-            return scheduler->try_run_task(ticket);
-        };
-        TaskHandle<Scheduler, Result> handle(_scheduler,std::move(future),try_execute);
+        auto ticket=_scheduler.enqueue_ticket([task] { (*task)(); });
+        auto handle=[&]() {
+            if constexpr (std::is_same_v<std::decay_t<decltype(ticket)>,
+                                         ThreadPool::Ticket>) {
+                return TaskHandle<Scheduler,Result>(
+                    _scheduler,std::move(future),std::move(ticket));
+            } else {
+                // Support custom scheduler ticket types as before.
+                auto try_execute=[scheduler=&_scheduler,ticket] {
+                    return scheduler->try_run_task(ticket);
+                };
+                return TaskHandle<Scheduler,Result>(
+                    _scheduler,std::move(future),try_execute);
+            }
+        }();
         try {
             // The common recursive fork/compute/join pattern owns one child.
             // Store its joiner directly; do not allocate a vector buffer.

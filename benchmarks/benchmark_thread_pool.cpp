@@ -373,11 +373,8 @@ std::uint64_t breakdown_run(ThreadPool& scheduler,unsigned tasks,
                 total+=combine(future.get(),right);
             } else {
                 auto ticket=scheduler.enqueue_ticket([task] { (*task)(); });
-                auto try_execute=[&scheduler,ticket] {
-                    return scheduler.try_run_task(ticket);
-                };
                 TaskHandle<ThreadPool,std::uint64_t> handle(
-                    scheduler,std::move(future),try_execute);
+                    scheduler,std::move(future),std::move(ticket));
                 const auto right=work_kernel(right_tag+seed,work);
                 total+=combine(handle.get(),right);
             }

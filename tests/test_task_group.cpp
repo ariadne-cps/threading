@@ -216,6 +216,19 @@ class TestTaskGroup : public Ariadne::Testing::ContextFixture {
         ARIADNE_TESTING_EXPECT_EQUAL(count.load(),1);
     }
 
+    void test_generic_future_helping_is_preserved() {
+        // The public generic constructor still executes pending scheduler
+        // work while waiting, without requiring a targeted ticket.
+        ThreadPool pool(0);
+        std::promise<int> promise;
+        auto result=promise.get_future().share();
+        auto worker=pool.enqueue([&promise] { promise.set_value(37); });
+        TaskHandle<ThreadPool,int> handle(pool,std::move(result));
+        ARIADNE_TESTING_EXPECT_EQUAL(handle.get(),37);
+        worker.get();
+        ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
+    }
+
     void test_thread_manager_sequential_mode() {
         auto& manager = ThreadManager::instance();
         manager.set_concurrency(0);
@@ -272,6 +285,7 @@ int main(int argc, char** argv) {
     ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_ticket_queue_churn);
     ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_destructor_joins);
     ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_void_handle);
+    ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_generic_future_helping_is_preserved);
     ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_thread_manager_sequential_mode);
     ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_thread_manager_worker_mode);
     return ARIADNE_TESTING_RUN_TESTS_WITH_ARGS(argc, argv);
