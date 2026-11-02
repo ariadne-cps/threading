@@ -267,6 +267,38 @@ class TestTaskGroup : public Ariadne::Testing::ContextFixture {
         ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
     }
 
+    void test_generic_wait_without_pending_scheduler_work() {
+        // A generic handle can wait for an externally produced result even
+        // when the associated scheduler has no runnable tasks. This must
+        // take the timed-wait path instead of spinning while helping.
+        ThreadPool pool(0);
+        std::promise<int> promise;
+        TaskHandle<ThreadPool,int> handle(
+            pool,promise.get_future().share());
+        std::jthread producer([&] {
+            std::this_thread::sleep_for(std::chrono::milliseconds(30));
+            promise.set_value(59);
+        });
+        ARIADNE_TESTING_EXPECT_EQUAL(handle.get(),59);
+        ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
+
+        // A targeted ticket can already have completed before its handle
+        // waits. In this case wait() must not try to run it a second time.
+        std::atomic<unsigned> executions{0u};
+        auto task=std::make_shared<std::packaged_task<int()>>([&] {
+            ++executions;
+            return 61;
+        });
+        auto ready_future=task->get_future().share();
+        auto ticket=pool.enqueue_ticket([task] { (*task)(); });
+        ARIADNE_TESTING_PROVE(pool.try_run_task(ticket));
+        TaskHandle<ThreadPool,int> ready_handle(
+            pool,std::move(ready_future),std::move(ticket));
+        ARIADNE_TESTING_EXPECT_EQUAL(ready_handle.get(),61);
+        ARIADNE_TESTING_EXPECT_EQUAL(executions.load(),1u);
+        ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
+    }
+
     void test_thread_manager_sequential_mode() {
         auto& manager = ThreadManager::instance();
         manager.set_concurrency(0);
@@ -326,6 +358,7 @@ int main(int argc, char** argv) {
     ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_void_handle);
     ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_explicit_direct_ticket_handle);
     ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_generic_future_helping_is_preserved);
+    ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_generic_wait_without_pending_scheduler_work);
     ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_thread_manager_sequential_mode);
     ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_thread_manager_worker_mode);
     return ARIADNE_TESTING_RUN_TESTS_WITH_ARGS(argc, argv);
