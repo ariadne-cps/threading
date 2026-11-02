@@ -1144,3 +1144,41 @@ Tests cover 0/1/4 worker counts, fixed-block floating-point bit
 patterns across concurrency limits, map/reduce rounding scopes,
 exceptions and restoration, pre-requested stop and stop requested
 from an executing graph node. No performance claims are inferred.
+
+
+## BDD/CDCL/DNN use-case benchmark harness (2026-11-02)
+
+Added a standalone benchmark `benchmark_use_cases` without changing the
+existing recursive BDD benchmark. It supports `--mode cdcl`,
+`dnn-forward`, `dnn-gradient`, or `all`, with `--workers`,
+`--cases`, `--work`, and `--samples`. Every scenario compares a
+single-threaded baseline with the identical computation scheduled
+through the threading primitives, checking full results and queue
+emptiness before interpreting timings. It reports median/min/max/MAD
+and the ratio of medians. A fresh pool is created per scenario and
+reused within the scenario, excluding construction from timing;
+sequential/parallel order alternates across samples.
+
+CDCL mode represents **independent candidate search**, not CDCL itself:
+there are no learned clauses, theory propagation, restarts, or proof
+objects. Only the final candidate is designated conclusive, forcing
+sequential and concurrent runs to return the same winning digest.
+The search loop uses `parallel_first_result`; the synthetic integer
+work kernel is a workload surrogate, not a solver throughput metric.
+
+DNN modes run deterministic CPU dense layers with 32 inputs,
+32 ReLU hidden nodes and 8 outputs across independent batch items.
+`dnn-gradient` additionally computes per-sample squared-output loss
+weight gradients (without an optimizer or weights update). The parallel
+path uses `TaskGraph` dependency edges; sequential and parallel
+results are fingerprinted bitwise. This is a small correctness/performance
+analogue, not a full DNN training benchmark or GPU comparison. Very
+small cases may be dominated by task overhead.
+
+The Ubuntu Release micro smoke workflow builds both benchmark targets
+and runs the new modes at 0 and 2 workers, with no assertions about
+runtime. Timing should be measured separately on controlled hardware,
+across worker counts and problem sizes. These synthetic scenarios
+cannot establish end-to-end BDD, CDCL/SMT, or DNN speedups.
+
+README remains limited to introduction, Features, and Build.
