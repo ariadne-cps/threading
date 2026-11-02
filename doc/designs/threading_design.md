@@ -593,3 +593,69 @@ Decision: retain the direct-ticket acquisition path and the generic
 callback constructor. Do not assume the differences are solely due to
 allocations. Next compare work=128/1024 and recursive cutoffs before
 further algorithmic changes.
+
+
+## Larger-grain handle comparison: mixed outcomes (2026-11-02)
+
+Six further user-supplied Release `handle-compare` runs used 16,384
+forks, nine samples, the same benchmark binary and work=128 or 1024
+rounds. The table preserves independent elapsed-time medians and
+the separately measured *paired* medians of the difference:
+
+| Workers | Rounds | Callback median ms | Direct median ms | Group median ms | Paired direct - callback ns/fork | Paired group - direct ns/fork |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | 128 | 19.228 | 18.441 | 18.434 | -44.6 | +1.7 |
+| 1 | 128 | 52.150 | 68.948 | 60.612 | +1000.9 | -383.2 |
+| 4 | 128 | 105.359 | 105.917 | 104.394 | -47.0 | +18.1 |
+| 0 | 1024 | 120.987 | 120.355 | 120.538 | -35.6 | +22.7 |
+| 1 | 1024 | 117.800 | 127.965 | 162.551 | +802.9 | +1699.8 |
+| 4 | 1024 | 191.125 | 189.352 | 189.107 | -91.8 | -68.1 |
+
+Per-stage median absolute deviations (callback / direct / group, ms):
+
+| Workers | Rounds | Callback MAD | Direct MAD | Group MAD |
+| ---: | ---: | ---: | ---: | ---: |
+| 0 | 128 | 0.116 | 0.070 | 0.049 |
+| 1 | 128 | 0.236 | 0.555 | 2.527 |
+| 4 | 128 | 0.393 | 0.877 | 0.240 |
+| 0 | 1024 | 0.262 | 0.211 | 0.139 |
+| 1 | 1024 | 2.767 | 1.760 | 7.497 |
+| 4 | 1024 | 0.270 | 0.742 | 0.537 |
+
+**Interpretation and change to the previous decision:**
+- With zero workers, direct acquisition wins both further
+  comparisons, by 44.6 and 35.6 ns/fork; no competing worker can
+  change execution ownership.
+- With one worker, direct acquisition loses substantially:
+  +1000.9 ns/fork at 128 rounds and +802.9 ns/fork at 1024 rounds.
+  The independent direct medians regress by 32.2% and 8.6%
+  against the callback implementation, respectively.
+- With four workers, the direct path has modestly favorable paired
+  differences, but at 128 rounds its independent elapsed-time
+  median (105.917 ms) is slightly *higher* than the callback median
+  (105.359 ms). This is mathematically possible: median of paired
+  differences is not the difference of medians. Do not erase this
+  discordance or cherry-pick either summary.
+- The full group path varies greatly relative to the manual direct
+  handle at one worker (+1699.8 ns/fork at 1024 rounds); its residual
+  is not an isolated joiner/allocation measurement.
+
+**Hypothesis, not demonstrated:** the slower one-worker outcomes
+may reflect a changed race between a worker dequeuing the task and
+the calling thread attempting targeted acquisition, with different
+allocation/dispatch timing changing which side runs the left
+branch. The current benchmark reports no execution-ownership
+counts, so it cannot prove this mechanism. Scheduler contention
+and system load are alternative explanations.
+
+**Decision revised:** keep the direct-ticket implementation in
+place temporarily as a *candidate*, not as a demonstrated universal
+improvement. The prior work=1 results favored it in all three
+worker configurations, but the six new runs refute a blanket
+speedup claim. No production policy change or further scheduler
+optimization is justified yet. Repeat the one-worker cases with
+additional independent runs; collect evidence about whether tasks
+run on the caller or a worker, and compare realistic recursive
+cutoff workloads. Consider rollback of the fast path if these
+regressions reproduce. Preserve the generic callback constructor
+and correctness coverage regardless of performance choice.
