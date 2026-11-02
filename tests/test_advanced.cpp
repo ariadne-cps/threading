@@ -27,8 +27,12 @@ class TestAdvanced : public Ariadne::Testing::ContextFixture {
                 ++calls;
                 // Trigger cancellation *after* the operation starts. The
                 // candidate sees the propagated stop token immediately.
-                if(request_external_stop && index==0u)
+                if(request_external_stop && index==0u) {
+                    // A non-cooperative callback can finish with a value
+                    // after an external stop. The publisher must reject it.
                     cancel_during_search.request_stop();
+                    return 17u;
+                }
                 if(stop.stop_requested())return std::nullopt;
                 if(index==0u)return 17u;
                 return std::nullopt;
