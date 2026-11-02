@@ -193,7 +193,88 @@ Release build with `--mode micro --tasks 16384 --work 1 --samples 9` and
 settings only with caution. CI smoke runs short zero/two-worker cases to
 check compilation and deterministic results, not speed.
 
-No performance measurements are claimed by this change. Before optimizing
-scheduler allocations or task handles, obtain reproducible local results;
-BDD must still choose a sufficiently coarse fork threshold and remove
+Prior to the measurements below, no local performance figures had been recorded.
+BDD must choose a sufficiently coarse fork threshold and remove
 its table-contention bottleneck.
+
+## Measured microbenchmark baseline and optimization log (2026-11-02)
+
+Status: baseline measurements supplied from a local Release benchmark run;
+no scheduler optimization has yet been validated against them. The exact
+machine, compiler version/flags beyond Release, system load and raw per-sample
+timings were not recorded. These results are *observations*, not portable
+performance promises or an isolated cost for any individual component.
+
+The run used `--mode micro --tasks 16384 --samples 9` with three worker
+counts and three kernel workloads. All times below are the reported medians
+in milliseconds; `delta` is the benchmark's median *paired* difference
+in nanoseconds per fork, so it should not be recomputed by subtracting
+independently reported medians.
+
+| Workers | Work rounds | Sequential median (ms) | TaskGroup median (ms) | Paired delta (ns/fork) |
+| ---: | ---: | ---: | ---: | ---: |
+| 0 | 1 | 0.028 | 6.577 | +399.8 |
+| 0 | 128 | 12.276 | 19.732 | +451.8 |
+| 0 | 1024 | 113.991 | 121.611 | +469.9 |
+| 1 | 1 | 0.026 | 39.512 | +2410.0 |
+| 1 | 128 | 12.331 | 52.446 | +2444.1 |
+| 1 | 1024 | 114.159 | 109.950 | -270.0 |
+| 4 | 1 | 0.026 | 42.925 | +2618.4 |
+| 4 | 128 | 12.332 | 99.889 | +5335.3 |
+| 4 | 1024 | 113.503 | 192.351 | +4812.5 |
+
+A preceding four-worker, work=1 run reported 45.548 ms (TaskGroup)
+and +2778.5 ns/fork, versus 42.925 ms and +2618.4 ns/fork in the
+matrix above; retain both observations to avoid concealing run-to-run
+variation.
+
+Interpretation and uncertainty:
+
+- Zero-worker mode shows approximately 0.40-0.47 microseconds of added
+  end-to-end cost per fork, without competing worker threads. This path
+  includes allocation and future/ticket/bookkeeping costs, not just a
+  scheduling operation.
+- One or four workers are substantially more expensive for fine work.
+  Four workers at 128 rounds cost +5.335 microseconds/fork, while one
+  worker costs +2.444 microseconds/fork. This suggests investigating
+  wake-up contention and execution handoff, but does not establish
+  either as the bottleneck.
+- The one-worker, 1024-round sample shows a small negative paired
+  difference. Do not infer a reliable speedup from nine samples.
+- The sequential and fork/join paths can be optimized differently by the
+  compiler; the microbenchmark uses serial per-iteration join and
+  permits little outstanding parallel work. It is useful for overhead
+  diagnosis, not sufficient to select a BDD cutoff or claim scaling.
+- AddressSanitizer/UBSan, ThreadSanitizer and the platform CI jobs passed
+  for the benchmark introduction (`f6ce44b`). CI does not establish
+  the performance figures above.
+
+Optimization/verification sequence (not yet completed):
+
+1. **Wake-up experiment:** evaluate replacing global-queue
+   `notify_all()` on each external submission with `notify_one()`,
+   while preserving broadcasts for worker-local descendants that may
+   benefit from stealing, shutdown and idle-zero transitions. Compare
+   all nine micro configurations against this baseline, and also test
+   external burst throughput and recursive cutoff performance. Do not
+   adopt solely because a single micro case improves.
+2. **Correctness gates:** maintain exact-once execution, bounded global
+   dispatch preference, nested helping, zero-worker draining,
+   concurrency resize, and exception semantics. Require Ubuntu,
+   macOS, Windows, ASan/UBSan and TSan CI before declaring a candidate
+   acceptable. In particular, test burst submissions and worker wakeups
+   for missed notifications and lost parallelism.
+3. **Allocation profile:** if the zero-worker path remains expensive,
+   instrument `packaged_task`, `shared_future`, ticket and joiner
+   construction. Optimize only components identified by measurements;
+   do not weaken the safe lifetime of task handles.
+4. **BDD readiness:** compare 0/1/4 workers with multiple `--work`
+   sizes and the existing recursive `--cutoff-sweep`, then benchmark
+   representative ROBDD ITE workloads on sharded tables. BDD owns
+   grain-size/cutoff policy and should not fork subproblems whose
+   useful work is below the measured break-even region.
+
+Record each accepted or rejected experiment with its own before/after
+measurements, CI status, semantic regressions if any, and resulting
+decision. No performance optimization is considered completed by this
+baseline documentation update.
