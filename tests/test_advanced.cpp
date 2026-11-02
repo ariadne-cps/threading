@@ -22,6 +22,7 @@ class TestAdvanced : public Ariadne::Testing::ContextFixture {
             std::atomic<unsigned> calls{0u};
             std::stop_source cancel_during_search;
             bool request_external_stop=false;
+            bool force_no_result=false;
             auto search=[&](std::size_t index,std::stop_token stop)
                     -> std::optional<unsigned> {
                 ++calls;
@@ -34,7 +35,7 @@ class TestAdvanced : public Ariadne::Testing::ContextFixture {
                     return 17u;
                 }
                 if(stop.stop_requested())return std::nullopt;
-                if(index==0u)return 17u;
+                if(index==0u && !force_no_result)return 17u;
                 return std::nullopt;
             };
             auto found=parallel_first_result(pool,32u,search);
@@ -49,6 +50,17 @@ class TestAdvanced : public Ariadne::Testing::ContextFixture {
             auto limited=parallel_first_result(pool,32u,search,1u);
             ARIADNE_TESTING_PROVE(bool(limited));
             ARIADNE_TESTING_EXPECT_EQUAL(*limited,17u);
+
+            // Exhaust the entire candidate range through the *same* F&
+            // instantiation. A negative result must visit each candidate
+            // once, then terminate on the index >= candidates boundary.
+            force_no_result=true;
+            const auto before_exhaustion=calls.load();
+            auto exhausted=parallel_first_result(pool,3u,search,1u);
+            ARIADNE_TESTING_PROVE(!exhausted);
+            ARIADNE_TESTING_EXPECT_EQUAL(calls.load(),before_exhaustion+3u);
+            ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
+            force_no_result=false;
 
             const auto before_cancel=calls.load();
             request_external_stop=true;
