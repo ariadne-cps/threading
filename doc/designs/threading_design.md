@@ -281,10 +281,9 @@ baseline documentation update.
 
 ## External injection wake-one candidate (2026-11-02)
 
-**Status: implemented as a candidate; runtime and performance verification
-pending on this commit.** This follows the 0/1/4-worker, work=1/128/1024
-microbenchmark baseline above. Do not report any speedup until a comparable
-post-change measurement is available.
+**Status: REJECTED; scheduler changes reverted after local benchmarking.**
+Candidate commit: `b88d345`. The following describes what was tried,
+not the behavior of the current scheduler.
 
 Implementation:
 - Global injection (external producer, or worker without an active local
@@ -312,10 +311,60 @@ external publication wakes only one worker, while fast bursts may take
 time to distribute across all workers; mixed local/global workloads
 may still cause contention. Neither outcome is established by CI.
 
-**Verification record (to be filled only from actual results):**
-- Build, platform tests, ASan/UBSan and TSan: pending.
-- Post-change `micro` matrix, all nine combinations, same machine:
-  pending.
-- External burst throughput and `recursive --cutoff-sweep`: pending.
-- Decision to retain/revert optimization based on measured benefit:
-  pending. A green CI is a safety prerequisite, not a performance result.
+**Verification record and measured outcome:**
+
+- CI at `b88d345`: Ubuntu, macOS, Windows, Coverage and Sanitizers
+  (ASan/UBSan, TSan) all passed. No semantic regression was detected by
+  these tests. This does not establish a performance improvement.
+- The user repeated the Release microbenchmark matrix with 16,384
+  forks per sample, nine samples per configuration, 0/1/4 workers
+  and 1/128/1024 rounds per branch. Independent median times are
+  shown in milliseconds; overhead is the median *paired* difference
+  in nanoseconds per fork, not a subtraction of independent medians.
+- Before is the preceding local baseline under the same command-line
+  parameters. Exact CPU model, system load and compiler invocation
+  were not recorded; the runs were not interleaved/randomized.
+
+| Workers | Rounds | Candidate sequential median (ms) | Candidate TaskGroup median (ms) | Before overhead (ns/fork) | After overhead (ns/fork) | Change (ns/fork) |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | 1 | 0.028 | 6.751 | 399.8 | 410.3 | +10.5 |
+| 0 | 128 | 12.329 | 19.951 | 451.8 | 460.5 | +8.7 |
+| 0 | 1024 | 115.286 | 122.156 | 469.9 | 436.2 | -33.7 |
+| 1 | 1 | 0.026 | 39.493 | 2410.0 | 2408.6 | -1.4 |
+| 1 | 128 | 12.335 | 55.725 | 2444.1 | 2649.3 | +205.2 |
+| 1 | 1024 | 114.061 | 119.328 | -270.0 | 321.5 | +591.5 |
+| 4 | 1 | 0.025 | 48.649 | 2618.4 | 2967.8 | +349.4 |
+| 4 | 128 | 12.359 | 91.773 | 5335.3 | 4852.0 | -483.3 |
+| 4 | 1024 | 113.214 | 191.474 | 4812.5 | 4776.6 | -35.9 |
+
+Positive change denotes regression. Four-worker work=128 improved
+by 483.3 ns/fork (~9% of overhead) and the TaskGroup median
+fell from 99.889 to 91.773 ms (~8%). However, four-worker work=1
+regressed from 42.925 to 48.649 ms (~13%), and one-worker work=128
+regressed from 52.446 to 55.725 ms (~6%). The one-worker 1024-round
+baseline was noisy; its single negative overhead is not a reliable
+speedup. The results do not support a consistent net gain.
+
+**Decision:** revert `notify_one()` and its dependent `_drain_epoch`
+change, restoring the original unified `_epoch` broadcasts, while
+retaining the two new correctness regression tests for external bursts
+and concurrent resizing. The additional complexity is not justified
+without a repeatable benefit. Full external-burst *throughput* and
+recursive-cutoff before/after performance runs were not provided;
+therefore the result is rejection on current evidence, not a proof
+that selective wakeups can never help.
+
+**Next experiment:** isolate the no-worker TaskGroup allocation and
+result-handle costs (~400-470 ns/fork baseline) with targeted
+instrumentation, then compare against the unchanged micro and
+recursive baselines. Preserve safety and semantic coverage; do not
+replace task handles with non-owning references solely for speed.
+
+
+## Revert of the wake-one candidate (2026-11-02)
+
+The worker notification change and the independent drain epoch from
+`b88d345` were reverted to the `c2fc26f` implementation.
+Two additional correctness tests introduced by the experiment are
+retained. This is a source-level rollback, not a new performance
+measurement; validation of the rollback commit by CI is pending.

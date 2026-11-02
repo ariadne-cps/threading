@@ -54,7 +54,7 @@ class TestWorkStealingPolicy : public Ariadne::Testing::ContextFixture {
 
     void test_idle_worker_wake_bursts() {
         // Let workers return to idle between short bursts. Each submitted
-        // task must complete even when FIFO wakes only one worker.
+        // task must complete reliably after the scheduler wakes workers.
         {
             ThreadPool pool(4);
             std::atomic<int> executed{0};
@@ -110,8 +110,8 @@ class TestWorkStealingPolicy : public Ariadne::Testing::ContextFixture {
     }
 
     void test_resize_drains_external_burst() {
-        // Shrink waits for zero outstanding activity on an independent epoch.
-        // Its wait must not steal the notification intended for a worker.
+        // Shrinking must drain all queued and running tasks before retiring
+        // a worker, including tasks arriving in a rapid external burst.
         std::atomic<bool> release{false};
         std::atomic<unsigned> active{0u};
         std::atomic<unsigned> finished{0u};

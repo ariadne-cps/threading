@@ -79,11 +79,10 @@ void ThreadPool::set_num_threads(size_t number) {
     if(number<old) {
         // Historical ThreadPool shrink is a synchronization barrier:
         // drain existing queued and running tasks before retiring threads.
-        // Drain waiters must not consume worker-only wake-one notifications.
         while((_activity.load(std::memory_order_acquire)&~stopping_bit)!=0u) {
-            const size_t stamp=_drain_epoch.load(std::memory_order_acquire);
+            const size_t stamp=_epoch.load(std::memory_order_acquire);
             if((_activity.load(std::memory_order_acquire)&~stopping_bit)!=0u)
-                _drain_epoch.wait(stamp,std::memory_order_acquire);
+                _epoch.wait(stamp,std::memory_order_acquire);
         }
         _desired_workers.store(number,std::memory_order_release);
         _epoch.fetch_add(1,std::memory_order_release);
@@ -139,7 +138,6 @@ ThreadPool::Ticket ThreadPool::_enqueue_task(VoidFunction task,bool tracked) {
                                            std::memory_order_acquire))
             break;
     }
-    bool submitted_locally=false;
     try {
         auto insert=[&](TaskQueue& queue,std::mutex& queue_mutex) {
             std::lock_guard<std::mutex> lock(queue_mutex);
@@ -158,7 +156,6 @@ ThreadPool::Ticket ThreadPool::_enqueue_task(VoidFunction task,bool tracked) {
             if(_current.index<_desired_workers.load(std::memory_order_acquire)) {
                 auto& local=*_locals[_current.index];
                 insert(local.tasks,local.mutex);
-                submitted_locally=true;
             } else {
                 insert(_global,_global_mutex);
             }
@@ -172,12 +169,7 @@ ThreadPool::Ticket ThreadPool::_enqueue_task(VoidFunction task,bool tracked) {
         throw;
     }
     _epoch.fetch_add(1,std::memory_order_release);
-    // Externally injected work needs one idle worker per publication;
-    // locally forked descendants may need multiple idle thieves.
-    if(submitted_locally)
-        _epoch.notify_all();
-    else
-        _epoch.notify_one();
+    _epoch.notify_all();
     return ticket;
 }
 
@@ -261,8 +253,6 @@ void ThreadPool::_finish_activity() noexcept {
     // zero; wake both a draining resize and workers exiting at shutdown.
     // Ordinary completions do not expose new work and need no wake-up.
     if((before & ~stopping_bit)==1u) {
-        _drain_epoch.fetch_add(1,std::memory_order_release);
-        _drain_epoch.notify_all();
         _epoch.fetch_add(1,std::memory_order_release);
         _epoch.notify_all();
     }
