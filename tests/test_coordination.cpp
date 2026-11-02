@@ -1,6 +1,8 @@
 #include "ariadne-threading.hpp"
 #include "ariadne-testing.hpp"
 #include <atomic>
+#include <chrono>
+#include <future>
 #include <memory>
 #include <stop_token>
 #include <thread>
@@ -81,6 +83,104 @@ class TestCoordination : public Ariadne::Testing::ContextFixture {
         ARIADNE_TESTING_PROVE(channel.closed());
     }
 
+    void test_channel_data_wakes_waiters() {
+        // An empty channel must wake a waiting receiver after a publish.
+        {
+            BoundedChannel<int> channel(1);
+            std::promise<void> started;
+            auto entered=started.get_future();
+            std::stop_source stop;
+            auto receiver=std::async(std::launch::async,[&] {
+                started.set_value();
+                return channel.receive(stop.get_token());
+            });
+            entered.wait();
+            ARIADNE_TESTING_PROVE(receiver.wait_for(std::chrono::milliseconds(10))
+                                  ==std::future_status::timeout);
+            ARIADNE_TESTING_PROVE(channel.try_send(17));
+            auto status=receiver.wait_for(std::chrono::seconds(5));
+            if(status!=std::future_status::ready)stop.request_stop();
+            ARIADNE_TESTING_PROVE(status==std::future_status::ready);
+            auto value=receiver.get();
+            ARIADNE_TESTING_PROVE(bool(value));
+            ARIADNE_TESTING_EXPECT_EQUAL(*value,17);
+            ARIADNE_TESTING_EXPECT_EQUAL(channel.size(),size_t{0});
+        }
+
+        // Removing the oldest item must wake a sender blocked by capacity.
+        {
+            BoundedChannel<int> channel(1);
+            ARIADNE_TESTING_PROVE(channel.send(23));
+            std::promise<void> started;
+            auto entered=started.get_future();
+            std::stop_source stop;
+            auto sender=std::async(std::launch::async,[&] {
+                started.set_value();
+                return channel.send(29,stop.get_token());
+            });
+            entered.wait();
+            ARIADNE_TESTING_PROVE(sender.wait_for(std::chrono::milliseconds(10))
+                                  ==std::future_status::timeout);
+            auto first=channel.try_receive();
+            ARIADNE_TESTING_PROVE(bool(first));
+            ARIADNE_TESTING_EXPECT_EQUAL(*first,23);
+            auto status=sender.wait_for(std::chrono::seconds(5));
+            if(status!=std::future_status::ready)stop.request_stop();
+            ARIADNE_TESTING_PROVE(status==std::future_status::ready);
+            ARIADNE_TESTING_PROVE(sender.get());
+            auto second=channel.receive();
+            ARIADNE_TESTING_PROVE(bool(second));
+            ARIADNE_TESTING_EXPECT_EQUAL(*second,29);
+        }
+    }
+
+    void test_channel_close_wakes_waiters() {
+        // Closing an empty channel wakes a pending receiver, without data.
+        {
+            BoundedChannel<int> channel(1);
+            std::promise<void> started;
+            auto entered=started.get_future();
+            std::stop_source stop;
+            auto receiver=std::async(std::launch::async,[&] {
+                started.set_value();
+                return channel.receive(stop.get_token());
+            });
+            entered.wait();
+            ARIADNE_TESTING_PROVE(receiver.wait_for(std::chrono::milliseconds(10))
+                                  ==std::future_status::timeout);
+            ARIADNE_TESTING_PROVE(channel.close());
+            auto status=receiver.wait_for(std::chrono::seconds(5));
+            if(status!=std::future_status::ready)stop.request_stop();
+            ARIADNE_TESTING_PROVE(status==std::future_status::ready);
+            ARIADNE_TESTING_PROVE(!receiver.get());
+        }
+
+        // Closing a full channel wakes a blocked sender and preserves data.
+        {
+            BoundedChannel<int> channel(1);
+            ARIADNE_TESTING_PROVE(channel.send(31));
+            std::promise<void> started;
+            auto entered=started.get_future();
+            std::stop_source stop;
+            auto sender=std::async(std::launch::async,[&] {
+                started.set_value();
+                return channel.send(37,stop.get_token());
+            });
+            entered.wait();
+            ARIADNE_TESTING_PROVE(sender.wait_for(std::chrono::milliseconds(10))
+                                  ==std::future_status::timeout);
+            ARIADNE_TESTING_PROVE(channel.close());
+            auto status=sender.wait_for(std::chrono::seconds(5));
+            if(status!=std::future_status::ready)stop.request_stop();
+            ARIADNE_TESTING_PROVE(status==std::future_status::ready);
+            ARIADNE_TESTING_PROVE(!sender.get());
+            auto retained=channel.receive();
+            ARIADNE_TESTING_PROVE(bool(retained));
+            ARIADNE_TESTING_EXPECT_EQUAL(*retained,31);
+            ARIADNE_TESTING_PROVE(!channel.receive());
+        }
+    }
+
     void test_budget_raii() {
         ConcurrencyBudget budget(2);
         {
@@ -156,6 +256,8 @@ int main(int argc,char** argv) {
     ARIADNE_TESTING_ADD_TEST(TestCoordination,test_channel_stop);
     ARIADNE_TESTING_ADD_TEST(TestCoordination,test_closed_channel_rejects_blocking_send);
     ARIADNE_TESTING_ADD_TEST(TestCoordination,test_channel_worker_exchange);
+    ARIADNE_TESTING_ADD_TEST(TestCoordination,test_channel_data_wakes_waiters);
+    ARIADNE_TESTING_ADD_TEST(TestCoordination,test_channel_close_wakes_waiters);
     ARIADNE_TESTING_ADD_TEST(TestCoordination,test_budget_raii);
     ARIADNE_TESTING_ADD_TEST(TestCoordination,test_budget_permit_move_assignment);
     ARIADNE_TESTING_ADD_TEST(TestCoordination,test_budget_stop);
