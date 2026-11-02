@@ -1048,3 +1048,32 @@ Regression checks exercise the mode inside worker/caller task bodies
 and reduction combiners on 0/1/4 worker pools, plus caller restoration.
 They do not substitute for numerical validation of an interval
 arithmetic library, strict-mode compiler flags, or proof obligations.
+
+
+## Dynamic ready-node DAG dispatch (2026-11-02)
+
+Replaced the first `TaskGraph::run()` global topological level
+barriers with dependency-driven scheduling. Graph construction is
+unchanged. Before executing actions, a Kahn pass validates the whole
+graph (a cycle fails without running any node). During execution,
+the ready queue, remaining predecessor counters, completed count
+and first failure are coordinated by a mutex/condition variable.
+A bounded number of CPU lanes (including the caller) take ready
+nodes, run outside the lock, and publish each newly unblocked
+successor. Independent nodes need not wait for unrelated slow
+nodes at the same topological depth.
+
+On the first observed task exception, no additional ready nodes
+are dispatched, active tasks finish, and the error is rethrown
+only after all lanes have joined. Each action is invoked at most
+once per successful run. `ParallelOptions::rounding_mode` is also
+scoped on every graph node so numerical kernels run under an
+explicit thread-local rounding policy when requested.
+
+Limits: this is a shared-lock ready queue, not lock-free or a
+high-throughput accelerator runtime. Lane count is fixed per run;
+nested graphs, tasks that block waiting for other tasks on the
+same bounded pool, or externally held application locks may
+deadlock. Task callbacks must not mutate the graph during run.
+A regression test checks that an independent slow root does not
+block a dependent child of a different ready root.

@@ -2,6 +2,8 @@
 #include "ariadne-testing.hpp"
 #include <atomic>
 #include <cstddef>
+#include <chrono>
+#include <thread>
 #include <optional>
 #include <stdexcept>
 #include <stop_token>
@@ -84,6 +86,26 @@ class TestAdvanced : public Ariadne::Testing::ContextFixture {
         }
     }
 
+    void test_graph_ready_without_global_wave_barrier() {
+        // A slow unrelated root must not delay an already-ready child.
+        ThreadPool pool(2);
+        TaskGraph graph;
+        std::atomic<bool> child_done{false};
+        std::atomic<bool> child_before_slow{false};
+        auto slow=graph.add_task([&] {
+            for(unsigned retry=0u;retry<2000u && !child_done.load();++retry)
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            child_before_slow.store(child_done.load());
+        });
+        (void)slow;
+        auto fast=graph.add_task([] {});
+        auto child=graph.add_task([&] { child_done.store(true); });
+        graph.add_dependency(fast,child);
+        graph.run(pool,ParallelOptions{1u,3u});
+        ARIADNE_TESTING_PROVE(child_before_slow.load());
+        ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
+    }
+
     void test_graph_cycle_invalid_and_exception() {
         ThreadPool pool(2);
         TaskGraph graph;
@@ -112,5 +134,6 @@ int main(int argc,char** argv) {
     ARIADNE_TESTING_ADD_TEST(TestAdvanced,test_first_result_external_stop_and_exception);
     ARIADNE_TESTING_ADD_TEST(TestAdvanced,test_graph_dependencies_and_reuse);
     ARIADNE_TESTING_ADD_TEST(TestAdvanced,test_graph_cycle_invalid_and_exception);
+    ARIADNE_TESTING_ADD_TEST(TestAdvanced,test_graph_ready_without_global_wave_barrier);
     return ARIADNE_TESTING_RUN_TESTS_WITH_ARGS(argc,argv);
 }
