@@ -227,19 +227,12 @@ Statistics statistics(std::vector<double> const& values) {
     return {middle,*bounds.first,*bounds.second,median(std::move(deviations))};
 }
 
-struct Comparison {
-    Statistics fifo;
-    Statistics stealing;
-    Statistics paired_ratio;
-};
-
 // Construct exactly one pool at a time, keeping all other pool workers
 // absent. Worker startup, a complete warm-up and destruction are excluded
 // from the clock. Every measured sample uses a freshly warmed pool.
 double measure_pool(std::string const& mode, Options const& options,
-                    unsigned workers, std::uint64_t reference,
-                    SchedulingPolicy policy) {
-    ThreadPool scheduler(workers,policy);
+                    unsigned workers, std::uint64_t reference) {
+    ThreadPool scheduler(workers);
     auto run=[&]() -> std::uint64_t {
         if(mode=="flat")return flat_run(scheduler,options.tasks,options.work);
         return recursive_run(scheduler,options.depth,left_tag,options.work,
@@ -255,35 +248,16 @@ double measure_pool(std::string const& mode, Options const& options,
     return elapsed;
 }
 
-Comparison compare(std::string const& mode, Options const& options,
+Statistics compare(std::string const& mode, Options const& options,
                    unsigned workers) {
     const auto reference=mode=="flat"
         ? flat_reference(options.tasks,options.work)
         : recursive_reference(options.depth,left_tag,options.work);
-    std::vector<double> fifo_samples,stealing_samples,paired;
-    fifo_samples.reserve(options.samples);
-    stealing_samples.reserve(options.samples);
-    paired.reserve(options.samples);
-
-    for(unsigned sample=0u;sample<options.samples;++sample) {
-        double fifo_ms=0.0,stealing_ms=0.0;
-        // Alternate the order of separately constructed, warmed pools.
-        if(sample%2u==0u) {
-            fifo_ms=measure_pool(mode,options,workers,reference,SchedulingPolicy::FIFO);
-            stealing_ms=measure_pool(mode,options,workers,reference,SchedulingPolicy::WorkStealing);
-        } else {
-            stealing_ms=measure_pool(mode,options,workers,reference,SchedulingPolicy::WorkStealing);
-            fifo_ms=measure_pool(mode,options,workers,reference,SchedulingPolicy::FIFO);
-        }
-        if(!(std::isfinite(fifo_ms) && std::isfinite(stealing_ms)
-             && fifo_ms>0.0 && stealing_ms>0.0))
-            throw std::runtime_error("invalid paired measurement");
-        fifo_samples.push_back(fifo_ms);
-        stealing_samples.push_back(stealing_ms);
-        paired.push_back(fifo_ms/stealing_ms);
-    }
-    return {statistics(fifo_samples),statistics(stealing_samples),
-            statistics(paired)};
+    std::vector<double> samples;
+    samples.reserve(options.samples);
+    for(unsigned sample=0u;sample<options.samples;++sample)
+        samples.push_back(measure_pool(mode,options,workers,reference));
+    return statistics(samples);
 }
 
 void print_statistics(std::string const& label,Statistics const& values,
@@ -312,9 +286,7 @@ void report(std::string const& mode,Options const& options,unsigned workers) {
         <<std::setw(13)<<"Max"
         <<std::setw(13)<<"MAD"<<"  Unit")
     LOGGING_PRINTLN(std::string(81u,'-'))
-    print_statistics("ThreadPool",times.fifo,"ms");
-    print_statistics("ThreadPool[WorkStealing]",times.stealing,"ms");
-    print_statistics("Paired FIFO/steal",times.paired_ratio,"x");
+    print_statistics("ThreadPool",times,"ms");
 }
 
 bool has_concurrency_option(List<String> const& arguments) {
@@ -379,13 +351,13 @@ int main(int argc,const char* argv[]) {
             throw std::invalid_argument(
                 "--cutoff-sweep requires a recursive workload");
 
-        LOGGING_PRINTLN("ThreadPool / ThreadPool[WorkStealing] benchmark (Release recommended)")
+        LOGGING_PRINTLN("ThreadPool work-stealing benchmark (Release recommended)")
         LOGGING_PRINTLN("tasks="<<options.tasks<<"  depth="<<options.depth
             <<"  samples="<<options.samples<<"  mode="
             <<(options.cutoff_sweep?"recursive (cutoff sweep)":options.mode))
-        LOGGING_PRINTLN("Each pool runs alone; a new pool is warmed per sample.")
+        LOGGING_PRINTLN("A fresh pool is warmed per sample.")
         LOGGING_PRINTLN("Median / Min / Max / MAD are per-sample statistics.")
-        LOGGING_PRINTLN("Paired FIFO/steal is the median of per-pair ratios; >1 favors stealing.")
+        LOGGING_PRINTLN("One scheduling policy: worker-local LIFO, FIFO stealing and global FIFO.")
 
         auto measure_configuration=[&](unsigned nworkers,unsigned rounds) {
             Options selected=options;

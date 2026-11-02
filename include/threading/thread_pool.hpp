@@ -57,13 +57,9 @@ const String THREAD_POOL_DEFAULT_NAME = "thr";
 
 class StoppedThreadPoolException : public std::exception { };
 
-//! \brief Scheduling strategy, fixed for the lifetime of a pool.
-enum class SchedulingPolicy { FIFO, WorkStealing };
-
 //! \brief Shared task scheduler for independent and nested task groups.
-//! \details FIFO uses one shared queue (workers take oldest, helpers newest).
-//! WorkStealing uses worker-local LIFO queues, FIFO stealing, and an external
-//! global FIFO injection queue. Resizing is an administrative operation.
+//! \details Local LIFO queues, FIFO stealing and a global FIFO injection queue.
+//! Workers periodically service global work even when local tasks are ready.
 class ThreadPool {
   private:
     struct QueuedTask;
@@ -82,10 +78,7 @@ class ThreadPool {
     using Ticket=std::shared_ptr<TaskTicket>;
 
     explicit ThreadPool(size_t num_threads,
-                        String name=THREAD_POOL_DEFAULT_NAME,
-                        SchedulingPolicy policy=SchedulingPolicy::FIFO);
-    ThreadPool(size_t num_threads,SchedulingPolicy policy)
-        : ThreadPool(num_threads,THREAD_POOL_DEFAULT_NAME,policy) { }
+                        String name=THREAD_POOL_DEFAULT_NAME);
     ThreadPool(ThreadPool const&)=delete;
     ThreadPool& operator=(ThreadPool const&)=delete;
     ThreadPool(ThreadPool&&)=delete;
@@ -96,7 +89,6 @@ class ThreadPool {
     auto enqueue(F&& f,AS&&... args) -> future<ResultOf<F(AS...)>>;
 
     String name() const;
-    SchedulingPolicy policy() const noexcept { return _policy; }
     bool try_run_one_task();
     Ticket enqueue_ticket(VoidFunction task);
     bool try_run_task(Ticket const& ticket);
@@ -120,6 +112,7 @@ class ThreadPool {
     struct WorkerContext {
         ThreadPool* pool;
         size_t index;
+        unsigned local_picks;
     };
     static thread_local WorkerContext _current;
     static constexpr size_t no_worker=static_cast<size_t>(-1);
@@ -127,15 +120,15 @@ class ThreadPool {
     Ticket _enqueue_task(VoidFunction task,bool tracked=false);
     // Caller holds the queue's mutex.
     void _extract(TaskQueue& queue,TaskQueue::iterator it,VoidFunction& task);
-    bool _take(VoidFunction& task,bool worker_dispatch);
-    bool _take_global(VoidFunction& task,bool fifo);
+    bool _take(VoidFunction& task);
+    bool _take_global(VoidFunction& task);
     bool _take_local(size_t index,VoidFunction& task,bool steal);
     void _execute(VoidFunction task);
     void _worker_loop(size_t index);
     void _finish_activity() noexcept;
 
     const String _name;
-    const SchedulingPolicy _policy;
+    static constexpr unsigned max_local_picks=8u;
     std::vector<std::unique_ptr<LocalQueue>> _locals;
     TaskQueue _global;
     std::mutex _global_mutex;

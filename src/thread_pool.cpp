@@ -30,7 +30,7 @@
 
 namespace Ariadne {
 
-thread_local ThreadPool::WorkerContext ThreadPool::_current{nullptr,no_worker};
+thread_local ThreadPool::WorkerContext ThreadPool::_current{nullptr,no_worker,0u};
 
 String construct_thread_name(String prefix,size_t number,size_t max_number) {
     std::ostringstream ss;
@@ -40,8 +40,8 @@ String construct_thread_name(String prefix,size_t number,size_t max_number) {
     return ss.str();
 }
 
-ThreadPool::ThreadPool(size_t workers,String name,SchedulingPolicy policy)
-    : _name(std::move(name)),_policy(policy) {
+ThreadPool::ThreadPool(size_t workers,String name)
+    : _name(std::move(name)) {
     set_num_threads(workers);
 }
 
@@ -151,7 +151,7 @@ ThreadPool::Ticket ThreadPool::_enqueue_task(VoidFunction task,bool tracked) {
             }
             _pending.fetch_add(1,std::memory_order_release);
         };
-        if(_policy==SchedulingPolicy::WorkStealing && _current.pool==this) {
+        if(_current.pool==this) {
             std::shared_lock<std::shared_mutex> topology_lock(_topology_mutex);
             if(_current.index<_desired_workers.load(std::memory_order_acquire)) {
                 auto& local=*_locals[_current.index];
@@ -168,15 +168,8 @@ ThreadPool::Ticket ThreadPool::_enqueue_task(VoidFunction task,bool tracked) {
         _finish_activity();
         throw;
     }
-    // An enqueue publishes work, so at least one idle worker must wake.
-    // FIFO workers all contend for one queue: waking every sleeper on
-    // every insertion causes a thundering herd under fine-grained loads.
-    // Keep work-stealing wake-all behavior unchanged in this experiment.
     _epoch.fetch_add(1,std::memory_order_release);
-    if(_policy==SchedulingPolicy::FIFO)
-        _epoch.notify_one();
-    else
-        _epoch.notify_all();
+    _epoch.notify_all();
     return ticket;
 }
 
@@ -203,11 +196,10 @@ bool ThreadPool::try_run_task(Ticket const& ticket) {
     return true;
 }
 
-bool ThreadPool::_take_global(VoidFunction& task,bool fifo) {
+bool ThreadPool::_take_global(VoidFunction& task) {
     std::lock_guard<std::mutex> lock(_global_mutex);
     if(_global.empty())return false;
-    const auto it=fifo ? _global.begin() : std::prev(_global.end());
-    _extract(_global,it,task);
+    _extract(_global,_global.begin(),task);
     return true;
 }
 
@@ -220,14 +212,22 @@ bool ThreadPool::_take_local(size_t index,VoidFunction& task,bool steal) {
     return true;
 }
 
-bool ThreadPool::_take(VoidFunction& task,bool worker_dispatch) {
-    if(_policy==SchedulingPolicy::FIFO)
-        return _take_global(task,worker_dispatch);
+bool ThreadPool::_take(VoidFunction& task) {
     std::shared_lock<std::shared_mutex> topology_lock(_topology_mutex);
     const size_t own=_current.pool==this ? _current.index : no_worker;
     const size_t active=_desired_workers.load(std::memory_order_acquire);
-    if(own<active && _take_local(own,task,false))return true;
-    if(_take_global(task,true))return true;
+    // A worker must probe externally injected work after eight local picks.
+    // This bounds local dispatch preference, not task execution latency.
+    if(own<active && _current.local_picks>=max_local_picks) {
+        _current.local_picks=0u;
+        if(_take_global(task))return true;
+    }
+    if(own<active && _take_local(own,task,false)) {
+        ++_current.local_picks;
+        return true;
+    }
+    if(own<active)_current.local_picks=0u;
+    if(_take_global(task))return true;
     for(size_t offset=0;offset<active;++offset) {
         const size_t victim=own<active
             ? (own+1+offset)%active : offset;
@@ -239,7 +239,7 @@ bool ThreadPool::_take(VoidFunction& task,bool worker_dispatch) {
 void ThreadPool::_execute(VoidFunction task) {
     WorkerContext previous=_current;
     const size_t index=previous.pool==this ? previous.index : no_worker;
-    _current={this,index};
+    _current={this,index,0u};
     // enqueue and TaskGroup futures own user exceptions.
     try { task(); }
     catch (...) { }
@@ -260,18 +260,18 @@ void ThreadPool::_finish_activity() noexcept {
 
 bool ThreadPool::try_run_one_task() {
     VoidFunction task;
-    if(!_take(task,false))return false;
+    if(!_take(task))return false;
     _execute(std::move(task));
     return true;
 }
 
 void ThreadPool::_worker_loop(size_t index) {
     const WorkerContext previous=_current;
-    _current={this,index};
+    _current={this,index,0u};
     for(;;) {
         if(index>=_desired_workers.load(std::memory_order_acquire))break;
         VoidFunction task;
-        if(_take(task,true)) {
+        if(_take(task)) {
             _execute(std::move(task));
             continue;
         }

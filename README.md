@@ -13,16 +13,14 @@ A small C++20 library for thread management, thread pools, buffered workers and 
 
 - `Thread`: managed single-shot threads with activation and exception reporting.
 - `BufferedThread`: a worker thread with a bounded task queue.
-- `ThreadPool`: one scheduler with FIFO and work-stealing policies, asynchronous submission and administrative resizing.
+- `ThreadPool`: one work-stealing scheduler with local LIFO queues, FIFO stealing, global FIFO injection, asynchronous submission and administrative resizing.
 - `ThreadManager`: process-wide concurrency management.
 - `StaticWorkload` and `DynamicWorkload`: serial or concurrent workload processing.
 - Thread-safe workload progress tracking.
 - Structured fork/join via `TaskGroup` and `TaskHandle`, using cooperative
   waits to execute pending work from the same scheduler. Task groups join
   outstanding tasks on scope exit and propagate exceptions on explicit join.
-- `SchedulingPolicy::WorkStealing`: worker-local LIFO queues and FIFO
-  victim stealing, selected with `ThreadPool(workers,SchedulingPolicy::WorkStealing)`.
-  See [the concurrency design](doc/designs/threading_design.md).
+- Work submitted from external threads enters a global FIFO, periodically serviced by workers to reduce starvation of independent callers. See [the concurrency design](doc/designs/threading_design.md).
 - Coverage support on Ubuntu/GCC and macOS/AppleClang.
 
 ## Command-line interface
@@ -71,17 +69,15 @@ cmake --build build-release --parallel --target benchmark_thread_pool
 
 The command line extends `ThreadingCommandLineInterface`, including logging
 scheduler, theme, verbosity and `-c`/`--concurrency` options. The concurrency
-option selects the number of workers in **each** compared pool (including zero).
+option selects the number of workers in the benchmark pool (including zero).
 The global ThreadManager is reset to zero before timing, to avoid competing
 background worker threads. Without the option, up to four workers are used.
 `--mode flat|recursive|both` chooses the scenarios; `--help` lists the options.
 
-Both scheduling policies run identical work and verify their results against a
-deterministic reference checksum. Each measured iteration constructs and
-warms one pool, measures it alone, and then destroys it before creating
-the other pool. The benchmark alternates their order across paired samples
-and reports median, minimum, maximum and median absolute deviation (MAD)
-in milliseconds, plus the median of per-pair FIFO/stealing ratios.
+The scheduler runs identical work and verify their results against a
+deterministic reference checksum. Each measured iteration constructs and warms a fresh pool, measures it,
+then destroys it. The benchmark reports median, minimum, maximum and median
+absolute deviation (MAD) in milliseconds.
 Pool construction, warm-up and destruction are excluded from timing.
 `--sweep` measures 1, 2, 4 and 8 workers at work=16, 128 and 1024;
 it cannot be combined with `--concurrency` or `--work`.
