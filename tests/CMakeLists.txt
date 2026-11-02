@@ -18,6 +18,7 @@ set(UNIT_TESTS
     test_umbrella
     test_parallel
     test_coordination
+    test_advanced
 )
 
 foreach(TEST ${UNIT_TESTS})

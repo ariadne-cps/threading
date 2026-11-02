@@ -17,8 +17,9 @@ The three reference use cases are **BDD (Binary Decision Diagrams)** for recursi
 - Work-stealing `ThreadPool` with worker-local queues, a global submission queue and adjustable worker count.
 - `ThreadManager` for process-wide concurrency settings.
 - Structured fork/join through `TaskGroup` and `TaskHandle`, including cooperative waiting and exception propagation.
-- Cooperative cancellation through `StopTaskGroup` and `std::stop_token`.
+- Cooperative cancellation through `StopTaskGroup` and `std::stop_token`, and first-result search coordination.
 - CPU `parallel_for` and `parallel_reduce` with bounded static partitioning.
+- Static dependency graphs through `TaskGraph` for ordered CPU operations.
 - Bounded FIFO communication through `BoundedChannel`, including closure and stop-aware waits.
 - Shared admission limits through RAII `ConcurrencyBudget` permits.
 - Thread-safe workload progress tracking and integration with Logging.

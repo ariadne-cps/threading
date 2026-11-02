@@ -975,3 +975,45 @@ feature summary, and build instructions. Examples, benchmarks, tests,
 implementation decisions and tutorial material belong outside README.
 The introduction spells out BDD (Binary Decision Diagrams), CDCL
 (Conflict-Driven Clause Learning) and DNN (Deep Neural Networks).
+
+
+## First-completion and static dependency execution (2026-11-02)
+
+Added two independent CPU task abstractions for the BDD/CDCL/DNN
+use-case family:
+- `parallel_first_result(pool,candidates,fn,max_lanes,external_stop)`
+  accepts a callback `fn(index,stop_token) -> optional<T>`. A
+  shared atomic counter distributes candidates to at most
+  `pool.num_threads()+1` lanes, including the caller; the first
+  successful result *published* under a mutex wins. Other lanes
+  receive a cooperative stop request. An external stop request
+  propagates to the internal source. All lanes complete before
+  return, even when callbacks throw; callback exceptions propagate.
+  This is a CDCL-style **portfolio coordination primitive**, not
+  clause learning, a SAT/SMT engine, or a theorem about the
+  consistency of two solver results. Candidate functions must
+  be thread-safe and stop-aware.
+- `TaskGraph` stores void actions and dependency edges and validates
+  references, duplicate edges, self-dependencies, and cycles.
+  `run(pool,options)` computes a full topological layering
+  *before* executing any action; tasks within a layer execute through
+  bounded `parallel_for` lanes, with a barrier before the next layer.
+  This is appropriate as a basic DNN CPU operations DAG and as a
+  testable foundation, not a high-performance dynamic ready queue.
+  On exceptions a layer drains then later layers are skipped.
+  Graph edits/runs must be externally serialized; tasks may not
+  mutate the graph while it executes. Shared tensors and data races
+  are the caller's responsibility.
+
+The public umbrella exposes both headers; new `test_advanced`
+exercises zero/one/multiple workers, first-success and no-success,
+external stop, exception draining, DAG ordering, cycle rejection,
+invalid dependencies, and graph reuse. No scheduler policy changed.
+
+Limitations: `parallel_first_result` may require additional semantics
+for solver-specific errors or proof validation; a stop cannot interrupt
+a noncooperative solver. `TaskGraph` currently does not overlap
+layers or dynamically schedule nodes as soon as their predecessors
+finish. Before optimizing either path, collect benchmark evidence
+from actual CDCL and DNN components. README remains deliberately
+restricted to introduction, features and build.
