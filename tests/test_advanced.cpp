@@ -23,9 +23,17 @@ class TestAdvanced : public Ariadne::Testing::ContextFixture {
             std::stop_source cancel_during_search;
             bool request_external_stop=false;
             bool force_no_result=false;
+            bool simultaneous_success=false;
+            std::barrier both_candidates_ready(2);
             auto search=[&](std::size_t index,std::stop_token stop)
                     -> std::optional<unsigned> {
                 ++calls;
+                if(simultaneous_success) {
+                    // Both callbacks finish their computation before either
+                    // can publish. Only one result may be selected.
+                    both_candidates_ready.arrive_and_wait();
+                    return static_cast<unsigned>(17u+index);
+                }
                 // Trigger cancellation *after* the operation starts. The
                 // candidate sees the propagated stop token immediately.
                 if(request_external_stop && index==0u) {
@@ -78,6 +86,19 @@ class TestAdvanced : public Ariadne::Testing::ContextFixture {
             ARIADNE_TESTING_EXPECT_EQUAL(calls.load(),before_preflight);
             ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
 
+            if(workers!=0u) {
+                // Check the already-tested publication race in the same
+                // callback instantiation that covers the normal search.
+                const auto before_race=calls.load();
+                simultaneous_success=true;
+                auto winner=parallel_first_result(pool,2u,search,2u);
+                ARIADNE_TESTING_PROVE(bool(winner));
+                ARIADNE_TESTING_PROVE(*winner==17u || *winner==18u);
+                ARIADNE_TESTING_EXPECT_EQUAL(calls.load(),before_race+2u);
+                ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
+                simultaneous_success=false;
+            }
+
             const auto before_cancel=calls.load();
             request_external_stop=true;
             auto interrupted=parallel_first_result(
@@ -115,25 +136,6 @@ class TestAdvanced : public Ariadne::Testing::ContextFixture {
                 [](std::size_t,std::stop_token)->std::optional<int> {
                     throw std::runtime_error("expected");
                 }));
-        ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
-    }
-
-    void test_first_result_concurrent_successes_publish_once() {
-        ThreadPool pool(2);
-        // Both callbacks produce successful results before either can
-        // publish. Exactly one result must be selected, and the loser must
-        // discard its result even though it has already completed its work.
-        std::barrier both_candidates_ready(2);
-        std::atomic<unsigned> calls{0u};
-        auto winner=parallel_first_result(pool,2u,
-            [&](std::size_t index,std::stop_token)->std::optional<unsigned> {
-                ++calls;
-                both_candidates_ready.arrive_and_wait();
-                return static_cast<unsigned>(101u+index);
-            },2u);
-        ARIADNE_TESTING_PROVE(bool(winner));
-        ARIADNE_TESTING_PROVE(*winner==101u || *winner==102u);
-        ARIADNE_TESTING_EXPECT_EQUAL(calls.load(),2u);
         ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
     }
 
@@ -303,7 +305,6 @@ int main(int argc,char** argv) {
     ARIADNE_TESTING_SUITE("advanced");
     ARIADNE_TESTING_ADD_TEST(TestAdvanced,test_first_result_and_no_result);
     ARIADNE_TESTING_ADD_TEST(TestAdvanced,test_first_result_external_stop_and_exception);
-    ARIADNE_TESTING_ADD_TEST(TestAdvanced,test_first_result_concurrent_successes_publish_once);
     ARIADNE_TESTING_ADD_TEST(TestAdvanced,test_graph_dependencies_and_reuse);
     ARIADNE_TESTING_ADD_TEST(TestAdvanced,test_graph_cycle_invalid_and_exception);
     ARIADNE_TESTING_ADD_TEST(TestAdvanced,test_graph_empty_invalid_options_and_dependency);
