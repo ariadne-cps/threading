@@ -24,10 +24,13 @@ class TestAdvanced : public Ariadne::Testing::ContextFixture {
             bool request_external_stop=false;
             bool force_no_result=false;
             bool simultaneous_success=false;
+            bool throw_from_candidate=false;
             std::barrier both_candidates_ready(2);
             auto search=[&](std::size_t index,std::stop_token stop)
                     -> std::optional<unsigned> {
                 ++calls;
+                if(throw_from_candidate)
+                    throw std::runtime_error("candidate failed");
                 if(simultaneous_success) {
                     // Both callbacks finish their computation before either
                     // can publish. Only one result may be selected.
@@ -98,6 +101,16 @@ class TestAdvanced : public Ariadne::Testing::ContextFixture {
                 ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
                 simultaneous_success=false;
             }
+
+            // A candidate exception must propagate through the same
+            // instantiation, without leaving pending work behind.
+            const auto before_failure=calls.load();
+            throw_from_candidate=true;
+            ARIADNE_TESTING_EXPECT_EXCEPTION(
+                parallel_first_result(pool,1u,search,1u));
+            ARIADNE_TESTING_EXPECT_EQUAL(calls.load(),before_failure+1u);
+            ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
+            throw_from_candidate=false;
 
             const auto before_cancel=calls.load();
             request_external_stop=true;
