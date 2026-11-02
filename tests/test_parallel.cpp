@@ -184,6 +184,62 @@ class TestParallel : public Ariadne::Testing::ContextFixture {
         }
     }
 
+    void test_cooperative_parallel_cancellation() {
+        for(unsigned workers : {0u,1u,4u}) {
+            ThreadPool pool(workers);
+            std::stop_source stop;
+            stop.request_stop();
+            std::atomic<unsigned> calls{0u};
+            ARIADNE_TESTING_EXPECT_EXCEPTION(parallel_for(
+                pool,0u,64u,[&](std::size_t) { ++calls; },
+                ParallelOptions{1u,3u},stop.get_token()));
+            ARIADNE_TESTING_EXPECT_EXCEPTION(parallel_reduce(
+                pool,0u,64u,0u,
+                [&](std::size_t)->unsigned { ++calls; return 1u; },
+                [](unsigned a,unsigned b) { return a+b; },
+                ParallelOptions{1u,3u},stop.get_token()));
+            ARIADNE_TESTING_EXPECT_EXCEPTION(parallel_reduce_fixed_blocks(
+                pool,0u,64u,0u,
+                [&](std::size_t)->unsigned { ++calls; return 1u; },
+                [](unsigned a,unsigned b) { return a+b; },
+                ParallelOptions{8u,3u},stop.get_token()));
+            ARIADNE_TESTING_EXPECT_EQUAL(calls.load(),0u);
+            stop=std::stop_source{};
+            std::atomic<unsigned> started{0u};
+            ARIADNE_TESTING_EXPECT_EXCEPTION(parallel_for(
+                pool,0u,1024u,[&](std::size_t) {
+                    if(started.fetch_add(1u)==0u)stop.request_stop();
+                },ParallelOptions{1u,3u},stop.get_token()));
+            ARIADNE_TESTING_PROVE(started.load()>=1u);
+            ARIADNE_TESTING_PROVE(started.load()<1024u);
+            ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
+        }
+    }
+
+    void test_cooperative_reduce_stop_during_work() {
+        for(unsigned workers : {0u,1u,4u}) {
+            ThreadPool pool(workers);
+            for(bool fixed : {false,true}) {
+                std::stop_source stop;
+                std::atomic<unsigned> visited{0u};
+                auto map=[&](std::size_t)->unsigned {
+                    if(visited.fetch_add(1u)==0u)stop.request_stop();
+                    return 1u;
+                };
+                auto reduce=[](unsigned a,unsigned b) { return a+b; };
+                ARIADNE_TESTING_EXPECT_EXCEPTION(
+                    fixed
+                    ? parallel_reduce_fixed_blocks(pool,0u,1024u,0u,map,reduce,
+                         ParallelOptions{8u,3u},stop.get_token())
+                    : parallel_reduce(pool,0u,1024u,0u,map,reduce,
+                         ParallelOptions{1u,3u},stop.get_token()));
+                ARIADNE_TESTING_PROVE(visited.load()>=1u);
+                ARIADNE_TESTING_PROVE(visited.load()<1024u);
+                ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
+            }
+        }
+    }
+
     void test_portfolio_stop() {
         for(unsigned workers : {0u,2u}) {
             ThreadPool pool(workers);
@@ -236,6 +292,8 @@ int main(int argc,char** argv) {
     ARIADNE_TESTING_ADD_TEST(TestParallel,test_rounding_mode_restored_after_exception);
     ARIADNE_TESTING_ADD_TEST(TestParallel,test_fixed_block_reduce_independent_of_workers);
     ARIADNE_TESTING_ADD_TEST(TestParallel,test_fixed_block_reduce_exceptions_and_rounding);
+    ARIADNE_TESTING_ADD_TEST(TestParallel,test_cooperative_parallel_cancellation);
+    ARIADNE_TESTING_ADD_TEST(TestParallel,test_cooperative_reduce_stop_during_work);
     ARIADNE_TESTING_ADD_TEST(TestParallel,test_portfolio_stop);
     ARIADNE_TESTING_ADD_TEST(TestParallel,test_portfolio_exception_and_scope_join);
     return ARIADNE_TESTING_RUN_TESTS_WITH_ARGS(argc,argv);

@@ -22,10 +22,12 @@
 #define THREADING_PARALLEL_HPP
 
 #include <algorithm>
+#include <atomic>
 #include <cstddef>
 #include <exception>
 #include <functional>
 #include <stdexcept>
+#include <stop_token>
 #include <utility>
 #include <vector>
 
@@ -34,6 +36,14 @@
 #include "threading/thread_pool.hpp"
 
 namespace Ariadne {
+
+//! A stopped parallel operation never returns a partial result as complete.
+//! An application callback exception takes precedence over cancellation.
+class ParallelOperationCancelled : public std::runtime_error {
+  public:
+    ParallelOperationCancelled()
+        : std::runtime_error("Parallel operation cancelled") { }
+};
 
 //! Limits for CPU data parallelism. max_tasks counts the caller as one lane.
 //! Zero max_tasks uses at most pool.num_threads()+1 lanes. A lane owns a
@@ -94,24 +104,39 @@ void execute_lanes(ThreadPool& scheduler,std::size_t lanes,F&& run_lane) {
 
 } // namespace parallel_detail
 
-//! Apply fn(index) once for each index in [first,last).
+//! Apply fn(index) to indices in [first,last) until completion or stop.
 //! A shared fn instance is invoked concurrently: it must be thread-safe.
-//! Partitions are static; there is no guarantee of parallel speedup.
+//! On a stop request, no partial completion is reported: all active lanes
+//! join and ParallelOperationCancelled is thrown. An exception from any
+//! callback asks other lanes to stop, then propagates after all join.
+//! Callbacks already running cannot be interrupted. Partitions are static.
 template<class F>
 void parallel_for(ThreadPool& scheduler,std::size_t first,
-                  std::size_t last,F&& fn,ParallelOptions options={}) {
+                  std::size_t last,F&& fn,ParallelOptions options={},
+                  std::stop_token stop={}) {
     if(first>last)
         throw std::invalid_argument("parallel_for: first exceeds last");
     const auto count=last-first;
     const auto lanes=parallel_detail::lane_count(scheduler,count,options);
     if(lanes==0u)return;
+    if(stop.stop_requested())throw ParallelOperationCancelled();
+    std::atomic<bool> failed{false};
     auto run_lane=[&](std::size_t lane) {
-        ScopedRoundingMode rounding(options.rounding_mode);
-        const auto [a,b]=parallel_detail::lane_interval(count,lanes,lane);
-        for(std::size_t i=a;i<b;++i)
-            std::invoke(fn,first+i);
+        try {
+            ScopedRoundingMode rounding(options.rounding_mode);
+            const auto [a,b]=parallel_detail::lane_interval(count,lanes,lane);
+            for(std::size_t i=a;i<b;++i) {
+                if(failed.load(std::memory_order_relaxed) ||
+                   stop.stop_requested())break;
+                std::invoke(fn,first+i);
+            }
+        } catch (...) {
+            failed.store(true,std::memory_order_relaxed);
+            throw;
+        }
     };
     parallel_detail::execute_lanes(scheduler,lanes,run_lane);
+    if(stop.stop_requested())throw ParallelOperationCancelled();
 }
 
 //! Transform each index with map(index), then combine partial results.
@@ -124,29 +149,47 @@ void parallel_for(ThreadPool& scheduler,std::size_t first,
 //! the final combination, restoring each calling thread on scope exit.
 //! Strict floating-point compilation is still required for rigor.
 //! map and reduce may be used concurrently: both must be thread-safe.
+//! On cancellation, all active lanes join and ParallelOperationCancelled
+//! is thrown: a partially accumulated value is never returned. Exceptions
+//! from map/reduce take precedence over cancellation and stop other lanes.
 template<class T,class Map,class Reduce>
 T parallel_reduce(ThreadPool& scheduler,std::size_t first,
                   std::size_t last,T identity,Map&& map,Reduce&& reduce,
-                  ParallelOptions options={}) {
+                  ParallelOptions options={},std::stop_token stop={}) {
     if(first>last)
         throw std::invalid_argument("parallel_reduce: first exceeds last");
     const auto count=last-first;
     const auto lanes=parallel_detail::lane_count(scheduler,count,options);
     if(lanes==0u)return identity;
+    if(stop.stop_requested())throw ParallelOperationCancelled();
     std::vector<T> partials(lanes,identity);
+    std::atomic<bool> failed{false};
     auto run_lane=[&](std::size_t lane) {
-        ScopedRoundingMode rounding(options.rounding_mode);
-        const auto [a,b]=parallel_detail::lane_interval(count,lanes,lane);
-        T result=identity;
-        for(std::size_t i=a;i<b;++i)
-            result=std::invoke(reduce,std::move(result),std::invoke(map,first+i));
-        partials[lane]=std::move(result);
+        try {
+            ScopedRoundingMode rounding(options.rounding_mode);
+            const auto [a,b]=parallel_detail::lane_interval(count,lanes,lane);
+            T result=identity;
+            for(std::size_t i=a;i<b;++i) {
+                if(failed.load(std::memory_order_relaxed) ||
+                   stop.stop_requested())break;
+                result=std::invoke(reduce,std::move(result),
+                                   std::invoke(map,first+i));
+            }
+            partials[lane]=std::move(result);
+        } catch (...) {
+            failed.store(true,std::memory_order_relaxed);
+            throw;
+        }
     };
     parallel_detail::execute_lanes(scheduler,lanes,run_lane);
+    if(stop.stop_requested())throw ParallelOperationCancelled();
     ScopedRoundingMode rounding(options.rounding_mode);
     T result=std::move(partials[0u]);
-    for(std::size_t lane=1u;lane<lanes;++lane)
+    for(std::size_t lane=1u;lane<lanes;++lane) {
+        if(stop.stop_requested())throw ParallelOperationCancelled();
         result=std::invoke(reduce,std::move(result),std::move(partials[lane]));
+    }
+    if(stop.stop_requested())throw ParallelOperationCancelled();
     return result;
 }
 
@@ -162,16 +205,20 @@ T parallel_reduce(ThreadPool& scheduler,std::size_t first,
 //! arithmetic for a backend that ignores dynamic rounding.
 //! Storage is O(ceil(elements/grain_size)), which can be expensive with
 //! very small grains. map/reduce must be safe under concurrent invocation.
+//! A stop aborts block processing or final combination without returning
+//! a partial answer; already-running callbacks are never interrupted.
 template<class T,class Map,class Reduce>
 T parallel_reduce_fixed_blocks(ThreadPool& scheduler,std::size_t first,
                                std::size_t last,T identity,Map&& map,
-                               Reduce&& reduce,ParallelOptions options={}) {
+                               Reduce&& reduce,ParallelOptions options={},
+                               std::stop_token stop={}) {
     if(first>last)
         throw std::invalid_argument("parallel_reduce_fixed_blocks: first exceeds last");
     if(options.grain_size==0u)
         throw std::invalid_argument("parallel_reduce_fixed_blocks: grain_size must be positive");
     const auto count=last-first;
     if(count==0u)return identity;
+    if(stop.stop_requested())throw ParallelOperationCancelled();
     const auto blocks=1u+(count-1u)/options.grain_size;
     std::vector<T> partials(blocks,identity);
     // Parallelise the blocks, not the individual elements. The assignment
@@ -181,14 +228,20 @@ T parallel_reduce_fixed_blocks(ThreadPool& scheduler,std::size_t first,
         const auto offset=block*options.grain_size;
         const auto end=offset+std::min(options.grain_size,count-offset);
         T subtotal=identity;
-        for(std::size_t i=offset;i<end;++i)
-            subtotal=std::invoke(reduce,std::move(subtotal),std::invoke(map,first+i));
+        for(std::size_t i=offset;i<end;++i) {
+            if(stop.stop_requested())throw ParallelOperationCancelled();
+            subtotal=std::invoke(reduce,std::move(subtotal),
+                                 std::invoke(map,first+i));
+        }
         partials[block]=std::move(subtotal);
-    },block_options);
+    },block_options,stop);
     ScopedRoundingMode rounding(options.rounding_mode);
     T total=std::move(partials[0u]);
-    for(std::size_t block=1u;block<blocks;++block)
+    for(std::size_t block=1u;block<blocks;++block) {
+        if(stop.stop_requested())throw ParallelOperationCancelled();
         total=std::invoke(reduce,std::move(total),std::move(partials[block]));
+    }
+    if(stop.stop_requested())throw ParallelOperationCancelled();
     return total;
 }
 

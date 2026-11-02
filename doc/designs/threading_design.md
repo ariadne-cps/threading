@@ -1182,3 +1182,31 @@ across worker counts and problem sizes. These synthetic scenarios
 cannot establish end-to-end BDD, CDCL/SMT, or DNN speedups.
 
 README remains limited to introduction, Features, and Build.
+
+
+## Cooperative stop for CPU loops and reductions (2026-11-02)
+
+The three CPU algorithms `parallel_for`, `parallel_reduce`, and
+`parallel_reduce_fixed_blocks` now accept an optional trailing
+`std::stop_token`, leaving existing call signatures compatible.
+A stopped nonempty operation throws `ParallelOperationCancelled`
+instead of returning a misleading partial reduction. Every dispatched
+lane joins before the exception is reported. All three implementations
+check stop between iterations, while callbacks already in execution
+are not preempted; fixed-block reduction checks cancellation in
+each block and during serial combination. Empty intervals preserve
+their ordinary identity/no-op semantics.
+
+`parallel_for` and ordinary `parallel_reduce` share a local atomic
+error flag so that a callback failure suppresses subsequent work on
+other lanes. The first callback exception observed by the existing
+structured join is propagated after all lanes terminate, taking
+precedence over the external cancellation exception. Fixed-block
+reduction reuses the stopping behavior of `parallel_for`; cancellation
+during map/reduce likewise does not produce an accumulated result.
+
+Tests cover cancellation requested before starting, cancellation
+requested by a callback during execution, queue draining, zero/one/
+multiple workers and unchanged no-stop call sites. This is a
+cooperative per-operation contract, NOT preemption of arbitrary
+user callbacks or a global reservation against nested parallelism.
