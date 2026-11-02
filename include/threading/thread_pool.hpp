@@ -132,6 +132,7 @@ class ThreadPool {
     bool _take_local(size_t index,VoidFunction& task,bool steal);
     void _execute(VoidFunction task);
     void _worker_loop(size_t index);
+    void _finish_activity() noexcept;
 
     const String _name;
     const SchedulingPolicy _policy;

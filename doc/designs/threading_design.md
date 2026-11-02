@@ -161,3 +161,8 @@ advantage for either scheduler.
 ## Atomic activity coordination
 
 A single `_activity` atomic combines a stop flag and an outstanding task count. Submission reserves activity before inserting into a physical queue, rolling back on insertion failure. Once shutdown is flagged, external submissions are rejected but existing tasks can submit descendants. Finishing a task decrements activity. An atomic wake-up generation (`_epoch`) replaces the shared state mutex on the per-task hot path. Queue mutexes continue to protect ticket handles and exact-once extraction; work-stealing's topology lock remains separate. Resizing is still administrative and may wait until outstanding work drains.
+
+
+## FIFO notification optimization (November 2026)
+
+The unified scheduler uses the same atomic activity reservation and task queues as before. Queue publication increments the wake epoch; FIFO signals one waiting worker rather than all of them, avoiding unnecessary contention on its single global queue. Work-stealing publication retains wake-all behavior. Normal task completion does not introduce new runnable work: it now increments the wake epoch and broadcasts only when the outstanding activity count transitions to zero, which is required for shutdown and administrative shrinking. Failed task insertions release their reserved activity through the same completion helper. Targeted ticket acquisition and worker queue removal remain serialized by each queue's mutex. The idle-burst and zero-worker descendant-drain tests exercise wakeups and lifecycle transitions for both policies. These changes require renewed local Release benchmarking; CI tests do not establish microbenchmark performance.

@@ -163,13 +163,20 @@ ThreadPool::Ticket ThreadPool::_enqueue_task(VoidFunction task,bool tracked) {
             insert(_global,_global_mutex);
         }
     } catch (...) {
-        _activity.fetch_sub(1,std::memory_order_acq_rel);
-        _epoch.fetch_add(1,std::memory_order_release);
-        _epoch.notify_all();
+        // Release a reservation that never became executable. Only the
+        // transition to zero can unblock a concurrent drain/retirement.
+        _finish_activity();
         throw;
     }
+    // An enqueue publishes work, so at least one idle worker must wake.
+    // FIFO workers all contend for one queue: waking every sleeper on
+    // every insertion causes a thundering herd under fine-grained loads.
+    // Keep work-stealing wake-all behavior unchanged in this experiment.
     _epoch.fetch_add(1,std::memory_order_release);
-    _epoch.notify_all();
+    if(_policy==SchedulingPolicy::FIFO)
+        _epoch.notify_one();
+    else
+        _epoch.notify_all();
     return ticket;
 }
 
@@ -237,9 +244,18 @@ void ThreadPool::_execute(VoidFunction task) {
     try { task(); }
     catch (...) { }
     _current=previous;
-    _activity.fetch_sub(1,std::memory_order_acq_rel);
-    _epoch.fetch_add(1,std::memory_order_release);
-    _epoch.notify_all();
+    _finish_activity();
+}
+
+void ThreadPool::_finish_activity() noexcept {
+    const size_t before=_activity.fetch_sub(1,std::memory_order_acq_rel);
+    // Running tasks cannot produce further work after this count reaches
+    // zero; wake both a draining resize and workers exiting at shutdown.
+    // Ordinary completions do not expose new work and need no wake-up.
+    if((before & ~stopping_bit)==1u) {
+        _epoch.fetch_add(1,std::memory_order_release);
+        _epoch.notify_all();
+    }
 }
 
 bool ThreadPool::try_run_one_task() {

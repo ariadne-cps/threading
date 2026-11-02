@@ -52,6 +52,31 @@ class TestWorkStealingPolicy : public Ariadne::Testing::ContextFixture {
         }
     }
 
+    void test_idle_worker_wake_bursts() {
+        // Let workers return to idle between short bursts. Each submitted
+        // task must complete even when FIFO wakes only one worker.
+        for(auto policy : {SchedulingPolicy::FIFO,SchedulingPolicy::WorkStealing}) {
+            ThreadPool pool(4,policy);
+            std::atomic<int> executed{0};
+            for(int round=0;round<24;++round) {
+                std::this_thread::sleep_for(1ms);
+                std::vector<std::future<void>> futures;
+                futures.reserve(16);
+                for(int i=0;i<16;++i) {
+                    futures.push_back(pool.enqueue([&executed] {
+                        executed.fetch_add(1,std::memory_order_relaxed);
+                    }));
+                }
+                for(auto& future:futures) {
+                    ARIADNE_TESTING_EXPECT_READY(future,5s);
+                    future.get();
+                }
+                ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
+            }
+            ARIADNE_TESTING_EXPECT_EQUAL(executed.load(),24*16);
+        }
+    }
+
     void test_zero_workers_help() {
         ThreadPool pool(0,SchedulingPolicy::WorkStealing);
         TaskGroup group(pool);
@@ -177,15 +202,19 @@ class TestWorkStealingPolicy : public Ariadne::Testing::ContextFixture {
     }
 
     void test_zero_worker_destructor_drains_descendants() {
-        std::atomic<int> completed{0};
-        {
-            ThreadPool pool(0,SchedulingPolicy::WorkStealing);
-            pool.enqueue([&] {
-                ++completed;
-                pool.enqueue([&completed] { ++completed; });
-            });
+        // The parent executes only once shutdown has begun. Its child
+        // must still be accepted and drained under either policy.
+        for(auto policy : {SchedulingPolicy::FIFO,SchedulingPolicy::WorkStealing}) {
+            std::atomic<int> completed{0};
+            {
+                ThreadPool pool(0,policy);
+                pool.enqueue([&] {
+                    ++completed;
+                    pool.enqueue([&completed] { ++completed; });
+                });
+            }
+            ARIADNE_TESTING_EXPECT_EQUAL(completed.load(),2);
         }
-        ARIADNE_TESTING_EXPECT_EQUAL(completed.load(),2);
     }
 
     void test_local_helping_while_joining() {
@@ -207,6 +236,7 @@ int main(int argc,char** argv) {
     ARIADNE_TESTING_SUITE("work_stealing_policy");
     ARIADNE_TESTING_ADD_TEST(TestWorkStealingPolicy,test_zero_workers_help);
     ARIADNE_TESTING_ADD_TEST(TestWorkStealingPolicy,test_concurrent_submission_and_exact_once);
+    ARIADNE_TESTING_ADD_TEST(TestWorkStealingPolicy,test_idle_worker_wake_bursts);
     ARIADNE_TESTING_ADD_TEST(TestWorkStealingPolicy,test_worker_executes_external_submission);
     ARIADNE_TESTING_ADD_TEST(TestWorkStealingPolicy,test_recursive_fork_join_single_worker);
     ARIADNE_TESTING_ADD_TEST(TestWorkStealingPolicy,test_multiple_forks_preserve_results);
