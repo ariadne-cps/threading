@@ -1077,3 +1077,30 @@ same bounded pool, or externally held application locks may
 deadlock. Task callbacks must not mutate the graph during run.
 A regression test checks that an independent slow root does not
 block a dependent child of a different ready root.
+
+
+## Correction: parallel_reduce lane rounding not installed (2026-11-02)
+
+The first scoped-rounding implementation (`b9d81e3`) contained an
+RTL-independent **library bug**: `parallel_for` installed
+`ScopedRoundingMode(options.rounding_mode)` in each lane, and
+`parallel_reduce` installed it for the final serial combination,
+but the latter **omitted the scope in its per-lane map/reduce loop**.
+The defect was confirmed by macOS `test_parallel`
+`rounding_mode_is_scoped_per_lane` (test 5/7) failing its
+`reduction_checks.load()>=128u` assertion. The reported
+`pool.queue_size()==0` was the last successful check and was not
+the failed assertion.
+
+Fix: install `ScopedRoundingMode` at the beginning of each
+`parallel_reduce` lane, preserving the existing final-combination
+scope. Strengthen the test to count the expected `FE_UPWARD`
+observations separately: exactly 128 maps and 128+(lanes-1)
+reductions, including the serial final combination, with 0/1/4
+pool workers. Also test restoration after a map exception.
+Do **not** weaken or delete the test to make the suite pass.
+
+Strict compiler flags and a conforming arithmetic backend remain
+necessary for mathematical guarantees; this fix establishes the
+documented thread-local rounding scope, **not** a correctly
+rounded whole reduction or bitwise worker-count independence.

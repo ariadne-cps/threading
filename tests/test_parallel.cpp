@@ -1,6 +1,7 @@
 #include "ariadne-threading.hpp"
 #include "ariadne-testing.hpp"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cfenv>
@@ -83,19 +84,44 @@ class TestParallel : public Ariadne::Testing::ContextFixture {
             ARIADNE_TESTING_EXPECT_EQUAL(observed.load(),4096u);
             ARIADNE_TESTING_EXPECT_EQUAL(std::fegetround(),caller_rounding);
 
-            std::atomic<unsigned> reduction_checks{0u};
+            std::atomic<unsigned> map_checks{0u};
+            std::atomic<unsigned> reduce_checks{0u};
             auto result=parallel_reduce(pool,0u,128u,0u,
                 [&](std::size_t)->unsigned {
-                    if(std::fegetround()==FE_UPWARD)++reduction_checks;
+                    if(std::fegetround()==FE_UPWARD)++map_checks;
                     return 1u;
                 },
                 [&](unsigned a,unsigned b) {
-                    if(std::fegetround()==FE_UPWARD)++reduction_checks;
+                    if(std::fegetround()==FE_UPWARD)++reduce_checks;
                     return a+b;
                 },ParallelOptions{1u,5u,FE_UPWARD});
             ARIADNE_TESTING_EXPECT_EQUAL(result,128u);
-            ARIADNE_TESTING_PROVE(reduction_checks.load()>=128u);
+            // 128 map operations and 128 in-lane reductions must all
+            // use FE_UPWARD; joining N lanes adds N-1 reductions.
+            const auto lanes=std::min(std::size_t{128},
+                std::min(std::size_t{5},std::size_t{workers}+1u));
+            ARIADNE_TESTING_EXPECT_EQUAL(map_checks.load(),128u);
+            ARIADNE_TESTING_EXPECT_EQUAL(reduce_checks.load(),
+                                         static_cast<unsigned>(128u+lanes-1u));
             ARIADNE_TESTING_EXPECT_EQUAL(std::fegetround(),caller_rounding);
+            ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
+        }
+    }
+
+    void test_rounding_mode_restored_after_exception() {
+        for(unsigned workers : {0u,1u,4u}) {
+            ThreadPool pool(workers);
+            const int initial=std::fegetround();
+            ARIADNE_TESTING_PROVE(initial!=-1);
+            ARIADNE_TESTING_EXPECT_EXCEPTION(parallel_reduce(
+                pool,0u,32u,0u,
+                [](std::size_t i)->unsigned {
+                    if(i==0u)throw std::runtime_error("expected");
+                    return 1u;
+                },
+                [](unsigned a,unsigned b) { return a+b; },
+                ParallelOptions{1u,5u,FE_DOWNWARD}));
+            ARIADNE_TESTING_EXPECT_EQUAL(std::fegetround(),initial);
             ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
         }
     }
@@ -149,6 +175,7 @@ int main(int argc,char** argv) {
     ARIADNE_TESTING_ADD_TEST(TestParallel,test_reduce_deterministic);
     ARIADNE_TESTING_ADD_TEST(TestParallel,test_exception_drains_lanes);
     ARIADNE_TESTING_ADD_TEST(TestParallel,test_rounding_mode_is_scoped_per_lane);
+    ARIADNE_TESTING_ADD_TEST(TestParallel,test_rounding_mode_restored_after_exception);
     ARIADNE_TESTING_ADD_TEST(TestParallel,test_portfolio_stop);
     ARIADNE_TESTING_ADD_TEST(TestParallel,test_portfolio_exception_and_scope_join);
     return ARIADNE_TESTING_RUN_TESTS_WITH_ARGS(argc,argv);

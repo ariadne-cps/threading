@@ -135,6 +135,7 @@ T parallel_reduce(ThreadPool& scheduler,std::size_t first,
     if(lanes==0u)return identity;
     std::vector<T> partials(lanes,identity);
     auto run_lane=[&](std::size_t lane) {
+        ScopedRoundingMode rounding(options.rounding_mode);
         const auto [a,b]=parallel_detail::lane_interval(count,lanes,lane);
         T result=identity;
         for(std::size_t i=a;i<b;++i)
