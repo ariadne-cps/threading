@@ -527,3 +527,40 @@ Next steps are to confirm the CI and re-run the full micro
 matrix to determine whether the direct-ticket path improves
 the parallel workloads; do not introduce additional scheduler
 complexity based solely on the zero-worker result.
+
+
+## Controlled callback-versus-ticket comparison (2026-11-02)
+
+At `63adf6a`, Ubuntu, macOS, Windows, Coverage and Sanitizers all
+completed successfully; the umbrella installed-header compilation
+check also passed as part of the Ubuntu Release workflow.
+This establishes basic compilation and regression safety, not a
+parallel speedup.
+
+The previous before/after `breakdown` measurements compared binaries
+run at different times. To reduce this confounder, the benchmark now
+offers `--mode handle-compare`, which measures **within the same
+binary and warmed pool** the legacy `std::function<bool()>` callback
+constructor and the new direct-ticket constructor. Both variants
+package the same callable, enqueue one ticket, make one owning
+joiner, compute the other branch locally, get the result and join.
+A third path uses the complete current `TaskGroup`. Each sample
+warms all three variants, rotates their timing order, checks equal
+checksums and demands an empty scheduler queue. It reports medians
+and medians of *paired* differences in ns/fork; a negative direct
+minus callback favors the direct ticket.
+
+The callback variant uses the **current** `TaskHandle` (including its
+`std::variant` storage and dispatch), not the historical binary.
+The comparison can isolate the current acquisition representation
+but not all costs introduced by the historical refactor. The
+`TaskGroup` path is separately reported and includes extra group
+bookkeeping, so do not attribute its difference entirely to
+ticket acquisition.
+
+**Status:** diagnostic benchmark committed; performance readings
+and new CI validation pending. No additional scheduler/TaskGroup
+optimization is introduced by this change. Benchmark 0/1/4 workers
+with `--tasks 16384 --work 1 --samples 9`, then validate at
+larger grain size and compare the existing recursive cutoff sweep
+before any further performance claim.

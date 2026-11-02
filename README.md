@@ -84,7 +84,7 @@ scheduler, theme, verbosity and `-c`/`--concurrency` options. The concurrency
 option selects the number of workers in the benchmark pool (including zero).
 The global ThreadManager is reset to zero before timing, to avoid competing
 background worker threads. Without the option, up to four workers are used.
-`--mode flat|recursive|micro|breakdown|both` chooses the scenarios; `both` covers flat and recursive. `--help` lists the options.
+`--mode flat|recursive|micro|breakdown|handle-compare|both` chooses the scenarios; `both` covers flat and recursive. `--help` lists the options.
 
 The scheduler runs identical work and verify their results against a
 deterministic reference checksum. Each measured iteration constructs and warms a fresh pool, measures it,
@@ -174,3 +174,23 @@ library primitives.
 Each sample warms and verifies all stages, runs them in a rotating order
 against one zero-worker pool, and checks for leftover tasks. Do not
 interpret these results as evidence of multithreaded speedup.
+
+### Comparing the direct ticket with the legacy callback path
+
+To compare the two acquisition representations in the **same current
+binary**, including with running workers:
+
+```bash
+./build-release/benchmarks/benchmark_thread_pool --mode handle-compare --concurrency 4 --tasks 16384 --work 1 --samples 9
+```
+
+For 0, 1 and 4 workers, change `--concurrency` and rerun. Each
+paired sample creates one warmed pool, runs the legacy callback
+constructor, the direct ticket constructor, and the complete
+`TaskGroup` path in rotating order, and checks all checksums.
+A negative paired `direct - callback` number favors the direct
+ticket. The comparison isolates acquisition *representation* under
+the present `TaskHandle` implementation; it does **not** compare
+the entire old and new repository binaries. The `TaskGroup` result
+contains additional group bookkeeping and is not a third
+interchangeable handle variant.

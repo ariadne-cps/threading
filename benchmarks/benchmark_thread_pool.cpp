@@ -111,10 +111,10 @@ List<ArgumentParser> benchmark_parsers(Options& options) {
             return [&options,n] { options.samples=n; };
         }));
     parsers.append(make_valued_argument_parser(
-        "m","mode","Workload: flat, recursive, micro, breakdown, both (default both)",
+        "m","mode","Workload: flat, recursive, micro, breakdown, handle-compare, both (default both)",
         [&options](String const& value) -> VoidFunction {
             const std::string mode(value);
-            if(mode!="flat" && mode!="recursive" && mode!="micro" && mode!="breakdown" && mode!="both")
+            if(mode!="flat" && mode!="recursive" && mode!="micro" && mode!="breakdown" && mode!="handle-compare" && mode!="both")
                 throw std::invalid_argument("invalid mode");
             return [&options,mode] { options.mode=mode; };
         }));
@@ -465,6 +465,120 @@ void report_breakdown(Options const& options) {
     LOGGING_PRINTLN("Stages overlap; differences are NOT additive component costs.")
 }
 
+
+// Paired A/B experiment within the same current TaskHandle implementation.
+// "Callback" reproduces the legacy acquisition *representation* (a
+// type-erased lambda), not the complete historical binary or TaskGroup.
+std::uint64_t handle_variant_run(ThreadPool& scheduler,unsigned tasks,
+                                 unsigned work,bool direct_ticket) {
+    std::uint64_t total=0u;
+    for(unsigned i=0u;i<tasks;++i) {
+        const auto left_work=[i,work] {
+            return work_kernel(left_tag+static_cast<std::uint64_t>(i),work);
+        };
+        auto task=std::make_shared<std::packaged_task<std::uint64_t()>>(left_work);
+        auto future=task->get_future().share();
+        auto ticket=scheduler.enqueue_ticket([task] { (*task)(); });
+        // Both paths make an owning joiner and compute the right branch
+        // locally; there is one outstanding fork per iteration.
+        auto consume=[&](TaskHandle<ThreadPool,std::uint64_t> handle) {
+            std::function<void()> joiner=[handle] {
+                static_cast<void>(handle.get());
+            };
+            const auto right=work_kernel(right_tag+
+                static_cast<std::uint64_t>(i),work);
+            total+=combine(handle.get(),right);
+            joiner();
+        };
+        if(direct_ticket) {
+            consume(TaskHandle<ThreadPool,std::uint64_t>(
+                scheduler,std::move(future),std::move(ticket)));
+        } else {
+            auto try_execute=[scheduler=&scheduler,ticket] {
+                return scheduler->try_run_task(ticket);
+            };
+            consume(TaskHandle<ThreadPool,std::uint64_t>(
+                scheduler,std::move(future),
+                std::function<bool()>(try_execute)));
+        }
+    }
+    return total;
+}
+
+struct HandleComparison {
+    Statistics callback;
+    Statistics direct;
+    Statistics group;
+    double paired_direct_minus_callback_ns;
+    double paired_group_minus_direct_ns;
+};
+
+HandleComparison compare_handles(Options const& options,unsigned workers) {
+    const auto reference=micro_reference(options.tasks,options.work);
+    std::array<std::vector<double>,3u> elapsed;
+    std::vector<double> direct_deltas,group_deltas;
+    for(auto& samples:elapsed)samples.reserve(options.samples);
+    direct_deltas.reserve(options.samples);
+    group_deltas.reserve(options.samples);
+    for(unsigned sample=0u;sample<options.samples;++sample) {
+        ThreadPool scheduler(workers);
+        auto run=[&](unsigned variant) -> std::uint64_t {
+            if(variant==0u)
+                return handle_variant_run(scheduler,options.tasks,options.work,false);
+            if(variant==1u)
+                return handle_variant_run(scheduler,options.tasks,options.work,true);
+            return micro_run(scheduler,options.tasks,options.work);
+        };
+        for(unsigned variant=0u;variant<3u;++variant) {
+            if(run(variant)!=reference)
+                throw std::runtime_error("handle-compare warm-up checksum mismatch");
+            if(scheduler.queue_size()!=0u)
+                throw std::runtime_error("handle-compare warm-up left queued tasks");
+        }
+        std::array<double,3u> times{};
+        // Rotate order to reduce systematic warming/order bias.
+        for(unsigned offset=0u;offset<3u;++offset) {
+            const unsigned variant=(sample+offset)%3u;
+            times[variant]=timed_sample([&] { return run(variant); },reference);
+            if(scheduler.queue_size()!=0u)
+                throw std::runtime_error("handle-compare sample left queued tasks");
+        }
+        for(unsigned variant=0u;variant<3u;++variant)
+            elapsed[variant].push_back(times[variant]);
+        direct_deltas.push_back((times[1]-times[0])*1.0e6/
+                               static_cast<double>(options.tasks));
+        group_deltas.push_back((times[2]-times[1])*1.0e6/
+                              static_cast<double>(options.tasks));
+    }
+    return {statistics(elapsed[0]),statistics(elapsed[1]),
+            statistics(elapsed[2]),median(std::move(direct_deltas)),
+            median(std::move(group_deltas))};
+}
+
+void report_handles(Options const& options,unsigned workers) {
+    const auto values=compare_handles(options,workers);
+    LOGGING_PRINTLN(" ")
+    LOGGING_PRINTLN("Workload=handle-compare | workers="<<workers
+        <<" | work="<<options.work<<" | forks="<<options.tasks
+        <<" | samples="<<options.samples)
+    LOGGING_PRINTLN(std::left<<std::setw(19)<<"Execution"
+        <<std::right<<std::setw(13)<<"Median"
+        <<std::setw(13)<<"Min"
+        <<std::setw(13)<<"Max"
+        <<std::setw(13)<<"MAD"<<"  Unit")
+    LOGGING_PRINTLN(std::string(81u,'-'))
+    print_statistics("Callback handle",values.callback,"ms");
+    print_statistics("Direct ticket",values.direct,"ms");
+    print_statistics("TaskGroup",values.group,"ms");
+    LOGGING_PRINTLN("Paired delta (direct - callback): "
+        <<std::fixed<<std::setprecision(1)
+        <<values.paired_direct_minus_callback_ns<<" ns/fork")
+    LOGGING_PRINTLN("Paired delta (TaskGroup - direct): "
+        <<std::fixed<<std::setprecision(1)
+        <<values.paired_group_minus_direct_ns<<" ns/fork")
+    LOGGING_PRINTLN("Callback uses the current TaskHandle with its legacy callable constructor.")
+}
+
 void report(std::string const& mode,Options const& options,unsigned workers) {
     if(mode=="micro") {
         const auto times=compare_micro(options,workers);
@@ -588,6 +702,8 @@ int main(int argc,const char* argv[]) {
                 report("recursive",selected,nworkers);
             if(selected.mode=="micro")
                 report("micro",selected,nworkers);
+            if(selected.mode=="handle-compare")
+                report_handles(selected,nworkers);
         };
 
         if(options.mode=="breakdown") {
