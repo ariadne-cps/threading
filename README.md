@@ -84,7 +84,7 @@ scheduler, theme, verbosity and `-c`/`--concurrency` options. The concurrency
 option selects the number of workers in the benchmark pool (including zero).
 The global ThreadManager is reset to zero before timing, to avoid competing
 background worker threads. Without the option, up to four workers are used.
-`--mode flat|recursive|micro|breakdown|handle-compare|both` chooses the scenarios; `both` covers flat and recursive. `--help` lists the options.
+`--mode flat|recursive|micro|breakdown|handle-compare|ownership|both` chooses the scenarios; `both` covers flat and recursive. `--help` lists the options.
 
 The scheduler runs identical work and verify their results against a
 deterministic reference checksum. Each measured iteration constructs and warms a fresh pool, measures it,
@@ -194,3 +194,22 @@ the present `TaskHandle` implementation; it does **not** compare
 the entire old and new repository binaries. The `TaskGroup` result
 contains additional group bookkeeping and is not a third
 interchangeable handle variant.
+
+### Diagnosing task ownership
+
+When a one-worker handle comparison behaves differently for work=128
+or work=1024, run this **untimed** diagnostic to count which thread
+actually executes the forked branch:
+
+```bash
+./build-release/benchmarks/benchmark_thread_pool --mode ownership --concurrency 1 --tasks 16384 --work 128 --samples 9
+```
+
+For every sample, it reports the caller/worker task counts separately
+for the callback and direct-ticket representations, and the paired
+change in the caller-executed percentage. Warm-up runs are excluded
+from the counts; all paths verify the checksum and empty queue.
+Because thread-ID checks and atomic counting **change scheduling
+timing**, these counts cannot be assumed to describe the uninstrumented
+timed benchmark. Use them to test the scheduling-race hypothesis,
+not to claim speedups.

@@ -659,3 +659,55 @@ run on the caller or a worker, and compare realistic recursive
 cutoff workloads. Consider rollback of the fast path if these
 regressions reproduce. Preserve the generic callback constructor
 and correctness coverage regardless of performance choice.
+
+
+## Repeated one-worker comparisons and ownership hypothesis (2026-11-02)
+
+Three independent local Release repeats per grain size, each with
+nine paired samples and 16,384 forks, produced:
+
+| Work rounds | Repeat | Callback median (ms) | Direct median (ms) | TaskGroup median (ms) | Paired direct - callback (ns/fork) | Paired TaskGroup - direct (ns/fork) |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 128 | 1 | 52.475 | 66.496 | 68.305 | +855.7 | +110.5 |
+| 128 | 2 | 52.241 | 66.689 | 62.639 | +905.2 | -253.9 |
+| 128 | 3 | 47.913 | 64.242 | 69.289 | +1073.3 | +292.3 |
+| 1024 | 1 | 116.541 | 149.112 | 163.212 | +1985.7 | +972.5 |
+| 1024 | 2 | 159.239 | 155.335 | 148.026 | -191.9 | +382.6 |
+| 1024 | 3 | 116.765 | 155.598 | 160.988 | +2052.6 | +219.6 |
+
+The median of the three *run-level paired medians* is +905.2
+ns/fork for work=128 and +1985.7 ns/fork for work=1024.
+These are not medians of all 27 raw sample differences,
+which were not supplied. At work=128, all three repeated
+runs strongly favor the callback; at 1024, two favor the
+callback while one reverses the sign. The callback time in
+the inverted 1024-round repeat rises to 159.239 ms versus
+116.541/116.765 ms in the other two, evidence of substantial
+run-to-run state changes. The regression is repeatable for
+128 rounds but the effect at 1024 is not stable enough to
+estimate precisely. The previous claim that direct-ticket
+acquisition is broadly preferable is no longer supported.
+
+**Status:** the direct-ticket path remains a candidate.
+No production code was changed to explain away the regression.
+The one-worker case suggests an execution-ownership or
+contention effect, but neither the callback nor direct
+timing samples report who executes the forked task.
+
+A new diagnostic `--mode ownership` now counts task-body executions
+on the submitting thread versus pool workers, for the same
+single-fork/compute-one/join structure with callback and direct
+handles. It reports individual trial counts and paired caller-share
+differences, with warm-up and correctness checks and one fresh
+pool per trial. Because it adds `std::this_thread::get_id()`
+and relaxed atomic increments to task bodies, these results
+**are not measurements of execution ownership in the uninstrumented
+benchmark**. They can inform, but cannot conclusively establish,
+the scheduling-race hypothesis. These counts are deliberately
+untimed and must not be mixed with the existing speed results.
+
+**Next verification:** execute `--mode ownership --concurrency 1
+--tasks 16384 --samples 9` with work=128 and work=1024;
+then evaluate whether measured ownership shifts correlate with
+the observed slowdown. A rollback remains a legitimate
+decision if the one-worker end-to-end regression persists.

@@ -28,6 +28,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <future>
 #include <memory>
 #include <bit>
@@ -111,10 +112,10 @@ List<ArgumentParser> benchmark_parsers(Options& options) {
             return [&options,n] { options.samples=n; };
         }));
     parsers.append(make_valued_argument_parser(
-        "m","mode","Workload: flat, recursive, micro, breakdown, handle-compare, both (default both)",
+        "m","mode","Workload: flat, recursive, micro, breakdown, handle-compare, ownership, both (default both)",
         [&options](String const& value) -> VoidFunction {
             const std::string mode(value);
-            if(mode!="flat" && mode!="recursive" && mode!="micro" && mode!="breakdown" && mode!="handle-compare" && mode!="both")
+            if(mode!="flat" && mode!="recursive" && mode!="micro" && mode!="breakdown" && mode!="handle-compare" && mode!="ownership" && mode!="both")
                 throw std::invalid_argument("invalid mode");
             return [&options,mode] { options.mode=mode; };
         }));
@@ -579,6 +580,107 @@ void report_handles(Options const& options,unsigned workers) {
     LOGGING_PRINTLN("Callback uses the current TaskHandle with its legacy callable constructor.")
 }
 
+
+// Untimed ownership diagnostic. Counting (and thread-id checks) modify the
+// race between the submitting thread and workers: do not interpret these
+// counts as observations of the uninstrumented timed benchmark.
+struct OwnershipCounts {
+    unsigned caller;
+    unsigned workers;
+};
+
+OwnershipCounts ownership_run(ThreadPool& scheduler,unsigned tasks,
+                              unsigned work,bool direct_ticket,
+                              std::uint64_t reference) {
+    std::atomic<unsigned> caller{0u},worker{0u};
+    const auto submitter=std::this_thread::get_id();
+    std::uint64_t total=0u;
+    for(unsigned i=0u;i<tasks;++i) {
+        auto left_work=[i,work,submitter,&caller,&worker] {
+            if(std::this_thread::get_id()==submitter)
+                caller.fetch_add(1u,std::memory_order_relaxed);
+            else
+                worker.fetch_add(1u,std::memory_order_relaxed);
+            return work_kernel(left_tag+static_cast<std::uint64_t>(i),work);
+        };
+        auto task=std::make_shared<std::packaged_task<std::uint64_t()>>(left_work);
+        auto future=task->get_future().share();
+        auto ticket=scheduler.enqueue_ticket([task] { (*task)(); });
+        auto consume=[&](TaskHandle<ThreadPool,std::uint64_t> handle) {
+            std::function<void()> joiner=[handle] {
+                static_cast<void>(handle.get());
+            };
+            const auto right=work_kernel(right_tag+
+                static_cast<std::uint64_t>(i),work);
+            total+=combine(handle.get(),right);
+            joiner();
+        };
+        if(direct_ticket) {
+            consume(TaskHandle<ThreadPool,std::uint64_t>(
+                scheduler,std::move(future),std::move(ticket)));
+        } else {
+            auto try_execute=[scheduler=&scheduler,ticket] {
+                return scheduler->try_run_task(ticket);
+            };
+            consume(TaskHandle<ThreadPool,std::uint64_t>(
+                scheduler,std::move(future),std::function<bool()>(try_execute)));
+        }
+    }
+    if(total!=reference)
+        throw std::runtime_error("ownership diagnostic checksum mismatch");
+    if(scheduler.queue_size()!=0u)
+        throw std::runtime_error("ownership diagnostic left queued tasks");
+    const OwnershipCounts counts{caller.load(std::memory_order_relaxed),
+                                 worker.load(std::memory_order_relaxed)};
+    if(static_cast<std::uint64_t>(counts.caller)+counts.workers!=tasks)
+        throw std::runtime_error("ownership diagnostic lost an execution");
+    return counts;
+}
+
+void report_ownership(Options const& options,unsigned workers) {
+    const auto reference=micro_reference(options.tasks,options.work);
+    std::vector<double> paired_percent,callback_percent,direct_percent;
+    paired_percent.reserve(options.samples);
+    callback_percent.reserve(options.samples);
+    direct_percent.reserve(options.samples);
+    LOGGING_PRINTLN(" ")
+    LOGGING_PRINTLN("Workload=ownership (untimed) | workers="<<workers
+        <<" | work="<<options.work<<" | forks="<<options.tasks
+        <<" | samples="<<options.samples)
+    LOGGING_PRINTLN("Sample  Callback caller  Callback worker  Direct caller  Direct worker  Delta caller percentage points")
+    for(unsigned sample=0u;sample<options.samples;++sample) {
+        ThreadPool scheduler(workers);
+        // One instrumented warm-up of each variant, excluded from counts.
+        (void)ownership_run(scheduler,options.tasks,options.work,false,reference);
+        (void)ownership_run(scheduler,options.tasks,options.work,true,reference);
+        OwnershipCounts callback{},direct{};
+        if(sample%2u==0u) {
+            callback=ownership_run(scheduler,options.tasks,options.work,false,reference);
+            direct=ownership_run(scheduler,options.tasks,options.work,true,reference);
+        } else {
+            direct=ownership_run(scheduler,options.tasks,options.work,true,reference);
+            callback=ownership_run(scheduler,options.tasks,options.work,false,reference);
+        }
+        const double callback_pct=100.0*callback.caller/options.tasks;
+        const double direct_pct=100.0*direct.caller/options.tasks;
+        callback_percent.push_back(callback_pct);
+        direct_percent.push_back(direct_pct);
+        paired_percent.push_back(direct_pct-callback_pct);
+        LOGGING_PRINTLN(std::setw(6)<<(sample+1u)
+            <<std::setw(17)<<callback.caller<<std::setw(17)<<callback.workers
+            <<std::setw(15)<<direct.caller<<std::setw(15)<<direct.workers
+            <<std::fixed<<std::setprecision(1)
+            <<std::setw(20)<<(direct_pct-callback_pct))
+    }
+    LOGGING_PRINTLN("Median caller-executed: callback "
+        <<std::fixed<<std::setprecision(1)<<median(std::move(callback_percent))
+        <<"%, direct "<<median(std::move(direct_percent))<<"%.")
+    LOGGING_PRINTLN("Median paired direct - callback caller share: "
+        <<std::fixed<<std::setprecision(1)<<median(std::move(paired_percent))
+        <<" percentage points.")
+    LOGGING_PRINTLN("Counts are diagnostic only: instrumentation changes timing and task ownership.")
+}
+
 void report(std::string const& mode,Options const& options,unsigned workers) {
     if(mode=="micro") {
         const auto times=compare_micro(options,workers);
@@ -683,6 +785,10 @@ int main(int argc,const char* argv[]) {
            (workers!=0u || options.sweep || options.cutoff_sweep))
             throw std::invalid_argument(
                 "breakdown requires --concurrency 0 and no sweep");
+        if(options.mode=="ownership" &&
+           (options.sweep || options.cutoff_sweep))
+            throw std::invalid_argument(
+                "ownership requires a fixed worker count and no sweep");
 
         LOGGING_PRINTLN("ThreadPool work-stealing benchmark (Release recommended)")
         LOGGING_PRINTLN("tasks="<<options.tasks<<"  depth="<<options.depth
@@ -704,6 +810,8 @@ int main(int argc,const char* argv[]) {
                 report("micro",selected,nworkers);
             if(selected.mode=="handle-compare")
                 report_handles(selected,nworkers);
+            if(selected.mode=="ownership")
+                report_ownership(selected,nworkers);
         };
 
         if(options.mode=="breakdown") {

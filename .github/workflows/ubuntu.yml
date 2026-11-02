@@ -65,6 +65,7 @@ jobs:
           "${{ runner.workspace }}/build/benchmarks/benchmark_thread_pool" --mode breakdown --concurrency 0 --tasks 256 --work 1 --samples 3
           "${{ runner.workspace }}/build/benchmarks/benchmark_thread_pool" --mode handle-compare --concurrency 0 --tasks 256 --work 1 --samples 3
           "${{ runner.workspace }}/build/benchmarks/benchmark_thread_pool" --mode handle-compare --concurrency 2 --tasks 256 --work 1 --samples 3
+          "${{ runner.workspace }}/build/benchmarks/benchmark_thread_pool" --mode ownership --concurrency 1 --tasks 256 --work 128 --samples 3
 
       - name: Install Release library
         if: matrix.build_type == 'Release'
