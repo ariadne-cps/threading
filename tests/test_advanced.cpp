@@ -20,17 +20,39 @@ class TestAdvanced : public Ariadne::Testing::ContextFixture {
         for(unsigned workers : {0u,1u,4u}) {
             ThreadPool pool(workers);
             std::atomic<unsigned> calls{0u};
-            auto found=parallel_first_result(pool,32u,
-                [&](std::size_t index,std::stop_token stop)
+            std::stop_source cancel_during_search;
+            bool request_external_stop=false;
+            auto search=[&](std::size_t index,std::stop_token stop)
                     -> std::optional<unsigned> {
-                    ++calls;
-                    if(stop.stop_requested())return std::nullopt;
-                    if(index==0u)return 17u;
-                    return std::nullopt;
-                });
+                ++calls;
+                // Trigger cancellation *after* the operation starts. The
+                // candidate sees the propagated stop token immediately.
+                if(request_external_stop && index==0u)
+                    cancel_during_search.request_stop();
+                if(stop.stop_requested())return std::nullopt;
+                if(index==0u)return 17u;
+                return std::nullopt;
+            };
+            auto found=parallel_first_result(pool,32u,search);
             ARIADNE_TESTING_PROVE(bool(found));
             ARIADNE_TESTING_EXPECT_EQUAL(*found,17u);
             ARIADNE_TESTING_PROVE(calls.load()>=1u);
+            ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
+
+            // An explicit single-lane limit must still find the same
+            // candidate; the search callback is reused for this and the
+            // cancellation case rather than instantiating new behaviors.
+            auto limited=parallel_first_result(pool,32u,search,1u);
+            ARIADNE_TESTING_PROVE(bool(limited));
+            ARIADNE_TESTING_EXPECT_EQUAL(*limited,17u);
+
+            const auto before_cancel=calls.load();
+            request_external_stop=true;
+            auto interrupted=parallel_first_result(
+                pool,32u,search,0u,cancel_during_search.get_token());
+            ARIADNE_TESTING_PROVE(!interrupted);
+            ARIADNE_TESTING_PROVE(cancel_during_search.stop_requested());
+            ARIADNE_TESTING_PROVE(calls.load()>before_cancel);
             ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
             auto none=parallel_first_result(pool,8u,
                 [](std::size_t,std::stop_token)->std::optional<unsigned> {
