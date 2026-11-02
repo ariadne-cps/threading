@@ -171,3 +171,29 @@ The unified scheduler uses the same atomic activity reservation and task queues 
 ## Single scheduler and fairness (November 2026)
 
 `ThreadPool` no longer exposes scheduling policies. It uses local LIFO queues, FIFO victim stealing, and a global FIFO injection queue. A worker checks global work before its ninth consecutive local dequeue, limiting preference for descendants of one invocation. This is a bound on dispatch choices, not on task execution time or response latency. Cooperative targeted ticket acquisition still executes dependencies exactly once. The benchmark now measures only this scheduler and retains the flat and recursive scenarios and cutoff sweep. `ThreadManager` continues to own the process-wide pool and its administrative concurrency configuration.
+
+## BDD-like fine-grained task cost baseline (November 2026)
+
+The standalone `benchmark_thread_pool --mode micro` measures a single
+structured fork plus one local branch, followed by targeted `TaskHandle::get()`
+and `TaskGroup::join()`, repeated `--tasks` times. Each iteration computes
+exactly the same deterministic result as a sequential baseline. Both paths
+use the same integer kernel; the checksum is checked on warm-up and on every
+timed sample. A fresh pool is warmed for each paired sample; measurement
+order alternates. Pool construction and destruction are excluded from timing.
+The reported median paired difference normalized by fork count includes
+packaged-task/future allocation, queue insertion, helping or dispatch, and
+joining, as well as effects from parallel execution. It must not be labeled
+a pure ticket or allocator cost.
+
+The micro workload isolates the short-task regime without replacing the
+existing flat-throughput and recursive-cutoff experiments. Run it in a
+Release build with `--mode micro --tasks 16384 --work 1 --samples 9` and
+`--concurrency 0`, `1`, and `4`. Compare across machines and compiler
+settings only with caution. CI smoke runs short zero/two-worker cases to
+check compilation and deterministic results, not speed.
+
+No performance measurements are claimed by this change. Before optimizing
+scheduler allocations or task handles, obtain reproducible local results;
+BDD must still choose a sufficiently coarse fork threshold and remove
+its table-contention bottleneck.

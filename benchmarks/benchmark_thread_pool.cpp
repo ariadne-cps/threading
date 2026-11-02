@@ -108,10 +108,10 @@ List<ArgumentParser> benchmark_parsers(Options& options) {
             return [&options,n] { options.samples=n; };
         }));
     parsers.append(make_valued_argument_parser(
-        "m","mode","Workload: flat, recursive, both (default both)",
+        "m","mode","Workload: flat, recursive, micro, both (default both)",
         [&options](String const& value) -> VoidFunction {
             const std::string mode(value);
-            if(mode!="flat" && mode!="recursive" && mode!="both")
+            if(mode!="flat" && mode!="recursive" && mode!="micro" && mode!="both")
                 throw std::invalid_argument("invalid mode");
             return [&options,mode] { options.mode=mode; };
         }));
@@ -191,6 +191,33 @@ std::uint64_t recursive_run(Scheduler& scheduler,unsigned depth,
     return result;
 }
 
+// Single-child structured fork/join, matching the BDD recursion pattern:
+// fork one branch, compute independent work locally, then join.
+std::uint64_t micro_reference(unsigned tasks,unsigned work) {
+    std::uint64_t total=0;
+    for(unsigned i=0u;i<tasks;++i) {
+        const auto seed=static_cast<std::uint64_t>(i);
+        const auto left=work_kernel(left_tag+seed,work);
+        const auto right=work_kernel(right_tag+seed,work);
+        total+=combine(left,right);
+    }
+    return total;
+}
+
+std::uint64_t micro_run(ThreadPool& scheduler,unsigned tasks,unsigned work) {
+    std::uint64_t total=0;
+    for(unsigned i=0u;i<tasks;++i) {
+        TaskGroup group(scheduler);
+        auto left=group.fork([i,work] {
+            return work_kernel(left_tag+static_cast<std::uint64_t>(i),work);
+        });
+        const auto right=work_kernel(right_tag+static_cast<std::uint64_t>(i),work);
+        total+=combine(left.get(),right);
+        group.join();
+    }
+    return total;
+}
+
 template<class F>
 double timed_sample(F&& compute,std::uint64_t reference) {
     const auto start=std::chrono::steady_clock::now();
@@ -260,6 +287,50 @@ Statistics compare(std::string const& mode, Options const& options,
     return statistics(samples);
 }
 
+struct MicroComparison {
+    Statistics sequential;
+    Statistics fork_join;
+    double paired_delta_ns_per_fork;
+};
+
+// Measure identical work with/without a fork, alternating run order.
+// Differences include task construction, scheduling and joining; they are
+// not a direct measurement of any one ThreadPool primitive.
+MicroComparison compare_micro(Options const& options,unsigned workers) {
+    const auto reference=micro_reference(options.tasks,options.work);
+    std::vector<double> sequential_samples, fork_samples, paired_deltas;
+    sequential_samples.reserve(options.samples);
+    fork_samples.reserve(options.samples);
+    paired_deltas.reserve(options.samples);
+
+    for(unsigned sample=0u;sample<options.samples;++sample) {
+        ThreadPool scheduler(workers);
+        auto sequential=[&] { return micro_reference(options.tasks,options.work); };
+        auto fork_join=[&] { return micro_run(scheduler,options.tasks,options.work); };
+        if(fork_join()!=reference || sequential()!=reference)
+            throw std::runtime_error("micro warm-up checksum mismatch");
+        if(scheduler.queue_size()!=0u)
+            throw std::runtime_error("micro warm-up left queued tasks");
+
+        double sequential_ms=0.0, fork_ms=0.0;
+        if(sample%2u==0u) {
+            sequential_ms=timed_sample(sequential,reference);
+            fork_ms=timed_sample(fork_join,reference);
+        } else {
+            fork_ms=timed_sample(fork_join,reference);
+            sequential_ms=timed_sample(sequential,reference);
+        }
+        if(scheduler.queue_size()!=0u)
+            throw std::runtime_error("micro sample left queued tasks");
+        sequential_samples.push_back(sequential_ms);
+        fork_samples.push_back(fork_ms);
+        paired_deltas.push_back((fork_ms-sequential_ms)*1.0e6/
+                                static_cast<double>(options.tasks));
+    }
+    return {statistics(sequential_samples),statistics(fork_samples),
+            median(std::move(paired_deltas))};
+}
+
 void print_statistics(std::string const& label,Statistics const& values,
                       std::string const& unit) {
     LOGGING_PRINTLN(std::left<<std::setw(19)<<label<<std::right
@@ -271,6 +342,25 @@ void print_statistics(std::string const& label,Statistics const& values,
 }
 
 void report(std::string const& mode,Options const& options,unsigned workers) {
+    if(mode=="micro") {
+        const auto times=compare_micro(options,workers);
+        LOGGING_PRINTLN(" ")
+        LOGGING_PRINTLN("Workload=micro | workers="<<workers
+            <<" | work="<<options.work<<" | forks="<<options.tasks
+            <<" | samples="<<options.samples)
+        LOGGING_PRINTLN(std::left<<std::setw(19)<<"Execution"
+            <<std::right<<std::setw(13)<<"Median"
+            <<std::setw(13)<<"Min"
+            <<std::setw(13)<<"Max"
+            <<std::setw(13)<<"MAD"<<"  Unit")
+        LOGGING_PRINTLN(std::string(81u,'-'))
+        print_statistics("Sequential",times.sequential,"ms");
+        print_statistics("TaskGroup",times.fork_join,"ms");
+        LOGGING_PRINTLN("Median paired difference: "<<std::fixed
+            <<std::setprecision(1)<<times.paired_delta_ns_per_fork
+            <<" ns/fork (TaskGroup - sequential)")
+        return;
+    }
     auto times=compare(mode,options,workers);
     LOGGING_PRINTLN(" ")
     LOGGING_PRINTLN("Workload="<<mode<<" | workers="<<workers
@@ -347,7 +437,7 @@ int main(int argc,const char* argv[]) {
         if(options.cutoff_sweep && options.cutoff_depth!=0u)
             throw std::invalid_argument(
                 "--cutoff-sweep cannot be combined with --cutoff-depth");
-        if(options.cutoff_sweep && options.mode=="flat")
+        if(options.cutoff_sweep && (options.mode=="flat" || options.mode=="micro"))
             throw std::invalid_argument(
                 "--cutoff-sweep requires a recursive workload");
 
@@ -358,6 +448,7 @@ int main(int argc,const char* argv[]) {
         LOGGING_PRINTLN("A fresh pool is warmed per sample.")
         LOGGING_PRINTLN("Median / Min / Max / MAD are per-sample statistics.")
         LOGGING_PRINTLN("One scheduling policy: worker-local LIFO, FIFO stealing and global FIFO.")
+        LOGGING_PRINTLN("Micro mode: one fork and one local branch per iteration.")
 
         auto measure_configuration=[&](unsigned nworkers,unsigned rounds) {
             Options selected=options;
@@ -366,6 +457,8 @@ int main(int argc,const char* argv[]) {
                 report("flat",selected,nworkers);
             if(selected.mode=="recursive" || selected.mode=="both")
                 report("recursive",selected,nworkers);
+            if(selected.mode=="micro")
+                report("micro",selected,nworkers);
         };
 
         if(options.cutoff_sweep) {

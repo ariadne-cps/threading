@@ -72,7 +72,7 @@ scheduler, theme, verbosity and `-c`/`--concurrency` options. The concurrency
 option selects the number of workers in the benchmark pool (including zero).
 The global ThreadManager is reset to zero before timing, to avoid competing
 background worker threads. Without the option, up to four workers are used.
-`--mode flat|recursive|both` chooses the scenarios; `--help` lists the options.
+`--mode flat|recursive|micro|both` chooses the scenarios; `both` covers flat and recursive. `--help` lists the options.
 
 The scheduler runs identical work and verify their results against a
 deterministic reference checksum. Each measured iteration constructs and warms a fresh pool, measures it,
@@ -94,7 +94,24 @@ recursive workload and cannot be combined with `--sweep` or a nonzero
 ```bash
 ./build-release/benchmarks/benchmark_thread_pool --concurrency 4 --work 128 --depth 14 --samples 9 --mode recursive --cutoff-sweep
 ```
-The benchmark is built and run manually; it is not a CI or CTest gate.
+For BDD-like short recursive work, micro mode measures one forked branch
+and one independent locally computed branch per iteration, compared with a
+sequential evaluation of the identical checksum. Each paired sample uses one
+freshly warmed pool, alternates measurement order, and reports the median
+time difference in ns/fork (TaskGroup minus sequential). This is an end-to-end
+cost difference, **not** a measurement of the cost of one isolated scheduler
+primitive. A negative difference is possible when useful parallel work
+outweighs scheduling overhead.
+
+```bash
+./build-release/benchmarks/benchmark_thread_pool --mode micro --concurrency 0 --tasks 16384 --work 1 --samples 9
+./build-release/benchmarks/benchmark_thread_pool --mode micro --concurrency 1 --tasks 16384 --work 1 --samples 9
+./build-release/benchmarks/benchmark_thread_pool --mode micro --concurrency 4 --tasks 16384 --work 1 --samples 9
+```
+
+Full performance experiments are manual. Ubuntu Release CI builds the
+benchmark and runs small smoke cases at zero and two workers for functional
+verification only; it makes no performance assertions.
 See [threading_design.md](doc/designs/threading_design.md) for the methodology.
 ## Coverage
 
