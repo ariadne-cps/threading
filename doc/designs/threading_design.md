@@ -853,3 +853,49 @@ integer recurrence.
 
 CI status verified at rollback `d8b0710`: Ubuntu, macOS,
 Windows, Coverage and Sanitizers all passed.
+
+
+## General-purpose CPU primitives for CDCL and deep inference (2026-11-02)
+
+The intended uses now include BDD fork/join, independent long-lived
+CDCL portfolio solvers, and CPU data-parallel deep-learning
+operations. This does not establish that BDD is performance-complete:
+realistic BDD ITE with memoization and contention is still unmeasured.
+
+**Implementation, first increment:**
+- `StopTaskGroup<Scheduler>` is a scope for cooperative portfolio
+  cancellation, built over the existing `TaskGroup`. Each forked
+  callable receives a `std::stop_token`; `request_stop()` is safe
+  from a worker, the owning thread performs fork/join, and the
+  destructor requests stop before joining. There is no forceful
+  cancellation, and the stop state is intentionally not resettable.
+  Ordinary task exceptions still propagate at explicit `join()`.
+- `parallel_for(ThreadPool&,first,last,fn,ParallelOptions)` partitions
+  an index interval into bounded contiguous lanes. The caller is one
+  lane; up to `pool.num_threads()` additional lanes execute via the
+  existing pool, subject to `max_tasks` and `grain_size`. A zero-worker
+  pool executes sequentially. All lanes join even on exceptions.
+- `parallel_reduce(ThreadPool&,first,last,identity,map,reduce,options)`
+  reduces within static contiguous lanes, then combines lane
+  partials in a fixed order. Reduction requires an associative
+  operator and two-sided identity; FP summation may differ across
+  lane counts. Functions used from several lanes must be thread-safe.
+
+These building blocks deliberately avoid a new scheduler, a task
+graph engine, clause-exchange protocol, GPU backend, automatic
+performance claims or implicit nested parallelism quotas.
+`max_tasks` limits one call rather than reserving global CPU
+capacity. Cancellation is cooperative rather than preemptive;
+a solver loop that never checks the token can still block join.
+
+**Verification plan:** `tests/test_parallel.cpp` covers serial and
+worker execution, exact-once loop indices, reductions, invalid
+and empty ranges, exception draining, CDCL-like first-winner
+stop propagation and scoped joins. The umbrella and installed
+header compilation CI ensure headers are exported. Platform
+CI outcomes are pending at commit creation. Future work should
+introduce explicit concurrency budgets, bounded communication
+channels, and benchmarks against realistic CDCL and numerical
+workloads before expanding policy complexity. Actual GPU
+execution belongs in an optional integration layer, not the
+core CPU scheduler.

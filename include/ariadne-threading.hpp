@@ -25,6 +25,8 @@
 #define ARIADNE_THREADING_UMBRELLA_HPP
 
 #include "threading/buffer.hpp"
+#include "threading/parallel.hpp"
+#include "threading/stop_task_group.hpp"
 #include "threading/buffered_thread.hpp"
 #include "threading/task_group.hpp"
 #include "threading/templates.hpp"

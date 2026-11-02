@@ -17,6 +17,8 @@ A small C++20 library for thread management, thread pools, buffered workers and 
 - `ThreadManager`: process-wide concurrency management.
 - `StaticWorkload` and `DynamicWorkload`: serial or concurrent workload processing.
 - Thread-safe workload progress tracking.
+- CPU data parallelism via `parallel_for` / `parallel_reduce` with bounded lanes and deterministic partition ordering.
+- Cooperative portfolio cancellation via `StopTaskGroup` and `std::stop_token` for independent long-lived jobs.
 - Structured fork/join via `TaskGroup` and `TaskHandle`, using cooperative
   waits to execute pending work from the same scheduler. Task groups join
   outstanding tasks on scope exit and propagate exceptions on explicit join.
@@ -218,3 +220,51 @@ Because thread-ID checks and atomic counting **change scheduling
 timing**, these counts cannot be assumed to describe the uninstrumented
 timed benchmark. Use them to test the scheduling-race hypothesis,
 not to claim speedups.
+
+## Parallel CPU loops and cooperative portfolio jobs
+
+Include `ariadne-threading.hpp`, `threading/parallel.hpp`, or
+`threading/stop_task_group.hpp`.
+
+```cpp
+Ariadne::ThreadPool pool(4);
+std::vector<double> values(10000,1.0);
+Ariadne::parallel_for(pool,0u,values.size(),
+    [&](std::size_t i) { values[i]*=2.0; },
+    Ariadne::ParallelOptions{256u,5u});
+double total=Ariadne::parallel_reduce(pool,0u,values.size(),0.0,
+    [&](std::size_t i) { return values[i]; },
+    [](double a,double b) { return a+b; });
+```
+
+`ParallelOptions` controls the minimum elements per lane and the maximum
+number of execution lanes **including the caller**; `max_tasks=0`
+selects at most `pool.num_threads()+1` lanes. The implementation
+uses contiguous static partitions, does not spawn one task per
+element, and waits for all lanes even if an exception occurs.
+Input callbacks must be safe to invoke concurrently. The reducer
+must be associative and have the given two-sided identity for a
+well-defined parallel reduction. Floating-point rounding may change
+with lane count.
+
+For CDCL portfolio jobs:
+
+```cpp
+Ariadne::StopTaskGroup group(pool);
+auto first=group.fork([](std::stop_token stop) {
+    while(!stop.stop_requested()) {
+        // Run a bounded portion of solver work and check for a result.
+    }
+});
+group.request_stop();
+group.join();
+```
+
+Jobs must **cooperate** with cancellation; there is no forced
+interruption. `StopTaskGroup` is scoped and non-reusable after a stop
+request; the owning thread submits and joins jobs, while other
+threads may call `request_stop()`. The destructor requests stop
+before joining. This does not implement a SAT solver, clause
+exchange, work placement, GPU execution, DAG dependencies,
+numeric tensor kernels or dynamic CPU quotas; they remain
+application-specific or later design work.
