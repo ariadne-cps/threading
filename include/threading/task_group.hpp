@@ -121,7 +121,12 @@ class TaskGroup {
         };
         TaskHandle<Scheduler, Result> handle(_scheduler,std::move(future),try_execute);
         try {
-            _joiners.emplace_back([handle] { static_cast<void>(handle.get()); });
+            // The common recursive fork/compute/join pattern owns one child.
+            // Store its joiner directly; do not allocate a vector buffer.
+            if (not _first_joiner)
+                _first_joiner=[handle] { static_cast<void>(handle.get()); };
+            else
+                _joiners.emplace_back([handle] { static_cast<void>(handle.get()); });
         } catch (...) {
             // A launched child must never outlive the owning scope on error.
             handle.wait();
@@ -134,10 +139,17 @@ class TaskGroup {
     //! \details All tasks finish before the first error is rethrown.
     void join() {
         std::exception_ptr first_error;
+        if (_first_joiner) {
+            try { _first_joiner(); }
+            catch (...) {
+                first_error=std::current_exception();
+            }
+            _first_joiner=nullptr;
+        }
         for (auto& joiner : _joiners) {
             try { joiner(); }
             catch (...) {
-                if (not first_error) first_error = std::current_exception();
+                if (not first_error) first_error=std::current_exception();
             }
         }
         _joiners.clear();
@@ -146,6 +158,9 @@ class TaskGroup {
 
   private:
     Scheduler& _scheduler;
+    // One inline joiner avoids the vector allocation in the one-child case.
+    // Type-erased joiner storage may still allocate for the captured handle.
+    std::function<void()> _first_joiner;
     std::vector<std::function<void()>> _joiners;
 };
 

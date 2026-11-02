@@ -367,7 +367,8 @@ The worker notification change and the independent drain epoch from
 `b88d345` were reverted to the `c2fc26f` implementation.
 Two additional correctness tests introduced by the experiment are
 retained. This is a source-level rollback, not a new performance
-measurement; validation of the rollback commit by CI is pending.
+measurement; validation of the rollback commit by CI has completed successfully (Ubuntu,
+macOS, Windows, Coverage, ASan/UBSan and TSan).
 
 
 ## Fine-grained TaskGroup cost decomposition (2026-11-02)
@@ -387,7 +388,46 @@ manual-handle minus group difference *suggests*, but does not prove,
 the cost of owning/recording a joiner. This benchmark is diagnostic
 instrumentation, not a scheduler optimization.
 
-No measured stage results exist at this commit. The pre-existing
-0-worker micro baseline remains 399.8/451.8/469.9 ns/fork for 1/128/1024
-rounds. A comparison on the same machine and Release configuration
-is required before changing queue/ticket or future lifetime machinery.
+The first user-supplied local Release measurement used 16,384 iterations,
+work=1, nine samples, and zero workers:
+
+| Diagnostic stage | Median (ms) | Paired delta (ns/iteration) |
+| --- | ---: | ---: |
+| Sequential | 0.025 | 0.0 |
+| Future only | 1.590 | 95.5 |
+| Ticket only | 1.318 | 79.0 |
+| Handle, no group | 4.010 | 243.2 |
+| TaskGroup | 5.799 | 352.4 |
+
+These are medians for the specific local run, not independent additive
+component costs. The difference of 109.2 ns/iteration between the complete
+group path and the manual handle path is an *upper-level measurement* of
+multiple effects including joiner registration, copies, allocation and
+differences in generated code. It is not an isolated vector allocation cost.
+The pre-existing zero-worker micro baseline remains
+399.8/451.8/469.9 ns/fork for work=1/128/1024; it is a different run
+and should not be conflated with the breakdown measurement.
+
+**Candidate optimization: one inline joiner (2026-11-02).**
+A TaskGroup now stores the first joiner in its own `std::function<void()>`
+member and only allocates a vector for subsequent forks. This avoids the
+vector's initial buffer allocation in the common fork-one/compute-one/join
+pattern used by BDD. The callable wrapper can still allocate heap memory;
+no claim is made that the full 109.2 ns is removed.
+
+Semantic invariants: every fork registers an owning joiner; exceptions
+are observed in fork order after joining all children; the destructor
+joins even when an explicit join was omitted; a group can be joined
+repeatedly and used for later forks; a failed joiner registration still
+waits for its launched child. Dedicated regression tests cover empty
+rejoin/refork, multiple exceptions in order, and multiple children
+drained by destruction, in addition to the existing deep recursion,
+exact-once, zero-worker and worker-mode coverage.
+
+**Verification at candidate creation:** source changes published and
+regression tests added; platform CI and sanitizer outcomes pending.
+**Performance:** pending a same-machine Release comparison with
+`--mode micro --concurrency 0/1/4` and a new `breakdown` run.
+Retain or revert based on semantic verification and reproducible
+end-to-end performance, not on the theoretical removal of one
+allocation.

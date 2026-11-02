@@ -106,6 +106,61 @@ class TestTaskGroup : public Ariadne::Testing::ContextFixture {
         ARIADNE_TESTING_EXPECT_EQUAL(finished.load(),2);
     }
 
+    void test_one_child_repeated_join_and_refork() {
+        ThreadPool pool(0);
+        TaskGroup group(pool);
+        for(int i=0;i<16;++i) {
+            auto handle=group.fork([i] { return i*i; });
+            ARIADNE_TESTING_EXPECT_EQUAL(handle.get(),i*i);
+            group.join();
+            // Re-joining an empty group must not repeat the task.
+            group.join();
+            ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
+        }
+    }
+
+    void test_multiple_forks_first_exception_order() {
+        ThreadPool pool(0);
+        std::atomic<int> completed{0};
+        TaskGroup group(pool);
+        group.fork([&completed] {
+            ++completed;
+            throw std::runtime_error("first");
+        });
+        group.fork([&completed] {
+            ++completed;
+            throw std::runtime_error("second");
+        });
+        auto last=group.fork([&completed] {
+            ++completed;
+            return 99;
+        });
+        bool first_observed=false;
+        try {
+            group.join();
+        } catch (std::runtime_error const& error) {
+            first_observed=std::string(error.what())=="first";
+        }
+        ARIADNE_TESTING_PROVE(first_observed);
+        ARIADNE_TESTING_EXPECT_EQUAL(completed.load(),3);
+        ARIADNE_TESTING_EXPECT_EQUAL(last.get(),99);
+        ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
+        // Joining after an exception must be a no-op.
+        group.join();
+    }
+
+    void test_multiple_forks_destruction_drains() {
+        ThreadPool pool(0);
+        std::atomic<int> completed{0};
+        {
+            TaskGroup group(pool);
+            for(int i=0;i<4;++i)
+                group.fork([&completed] { ++completed; });
+        }
+        ARIADNE_TESTING_EXPECT_EQUAL(completed.load(),4);
+        ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
+    }
+
     void test_ticket_queue_churn() {
         ThreadPool pool(0);
         std::atomic<int> executed{0};
@@ -210,6 +265,9 @@ int main(int argc, char** argv) {
     ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_deep_recursive_fork_join);
     ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_parallel_forks);
     ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_join_drains_after_exception);
+    ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_one_child_repeated_join_and_refork);
+    ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_multiple_forks_first_exception_order);
+    ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_multiple_forks_destruction_drains);
     ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_ticket_acquisition_race);
     ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_ticket_queue_churn);
     ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_destructor_joins);
