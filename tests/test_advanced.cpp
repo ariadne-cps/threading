@@ -106,6 +106,42 @@ class TestAdvanced : public Ariadne::Testing::ContextFixture {
         ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
     }
 
+    void test_graph_stop_before_run_and_resume() {
+        for(unsigned workers : {0u,1u,4u}) {
+            ThreadPool pool(workers);
+            TaskGraph graph;
+            std::atomic<unsigned> count{0u};
+            auto a=graph.add_task([&] { ++count; });
+            auto b=graph.add_task([&] { ++count; });
+            graph.add_dependency(a,b);
+            std::stop_source stop;
+            stop.request_stop();
+            graph.run(pool,ParallelOptions{1u,3u},stop.get_token());
+            ARIADNE_TESTING_EXPECT_EQUAL(count.load(),0u);
+            graph.run(pool);
+            ARIADNE_TESTING_EXPECT_EQUAL(count.load(),2u);
+        }
+    }
+
+    void test_graph_stop_from_node() {
+        // In single-lane mode the first node can request an external
+        // stop and prevent other ready nodes from being dispatched.
+        for(unsigned workers : {0u,1u,4u}) {
+            ThreadPool pool(workers);
+            TaskGraph graph;
+            std::stop_source stop;
+            std::atomic<unsigned> count{0u};
+            graph.add_task([&] {
+                ++count;
+                stop.request_stop();
+            });
+            graph.add_task([&] { ++count; });
+            graph.run(pool,ParallelOptions{1u,1u},stop.get_token());
+            ARIADNE_TESTING_EXPECT_EQUAL(count.load(),1u);
+            ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
+        }
+    }
+
     void test_graph_cycle_invalid_and_exception() {
         ThreadPool pool(2);
         TaskGraph graph;
@@ -135,5 +171,7 @@ int main(int argc,char** argv) {
     ARIADNE_TESTING_ADD_TEST(TestAdvanced,test_graph_dependencies_and_reuse);
     ARIADNE_TESTING_ADD_TEST(TestAdvanced,test_graph_cycle_invalid_and_exception);
     ARIADNE_TESTING_ADD_TEST(TestAdvanced,test_graph_ready_without_global_wave_barrier);
+    ARIADNE_TESTING_ADD_TEST(TestAdvanced,test_graph_stop_before_run_and_resume);
+    ARIADNE_TESTING_ADD_TEST(TestAdvanced,test_graph_stop_from_node);
     return ARIADNE_TESTING_RUN_TESTS_WITH_ARGS(argc,argv);
 }

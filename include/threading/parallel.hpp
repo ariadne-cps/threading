@@ -150,6 +150,48 @@ T parallel_reduce(ThreadPool& scheduler,std::size_t first,
     return result;
 }
 
+//! Reduce in a fixed sequence of blocks, independent of worker count.
+//! grain_size specifies the BLOCK size, not merely a scheduling hint.
+//! Each block applies map/reduce in increasing index order; block results
+//! are combined in increasing block order. The grouping is invariant when
+//! max_tasks or the scheduler's worker count changes.
+//! This can make floating-point results bitwise repeatable on one platform
+//! under strict FP compilation if callbacks are pure and the rounding
+//! environment is identical. It does NOT guarantee correctly rounded
+//! whole sums, identical results on different architectures, or strict
+//! arithmetic for a backend that ignores dynamic rounding.
+//! Storage is O(ceil(elements/grain_size)), which can be expensive with
+//! very small grains. map/reduce must be safe under concurrent invocation.
+template<class T,class Map,class Reduce>
+T parallel_reduce_fixed_blocks(ThreadPool& scheduler,std::size_t first,
+                               std::size_t last,T identity,Map&& map,
+                               Reduce&& reduce,ParallelOptions options={}) {
+    if(first>last)
+        throw std::invalid_argument("parallel_reduce_fixed_blocks: first exceeds last");
+    if(options.grain_size==0u)
+        throw std::invalid_argument("parallel_reduce_fixed_blocks: grain_size must be positive");
+    const auto count=last-first;
+    if(count==0u)return identity;
+    const auto blocks=1u+(count-1u)/options.grain_size;
+    std::vector<T> partials(blocks,identity);
+    // Parallelise the blocks, not the individual elements. The assignment
+    // of blocks to execution lanes never changes arithmetic grouping.
+    auto block_options=ParallelOptions{1u,options.max_tasks,options.rounding_mode};
+    parallel_for(scheduler,0u,blocks,[&](std::size_t block) {
+        const auto offset=block*options.grain_size;
+        const auto end=offset+std::min(options.grain_size,count-offset);
+        T subtotal=identity;
+        for(std::size_t i=offset;i<end;++i)
+            subtotal=std::invoke(reduce,std::move(subtotal),std::invoke(map,first+i));
+        partials[block]=std::move(subtotal);
+    },block_options);
+    ScopedRoundingMode rounding(options.rounding_mode);
+    T total=std::move(partials[0u]);
+    for(std::size_t block=1u;block<blocks;++block)
+        total=std::invoke(reduce,std::move(total),std::move(partials[block]));
+    return total;
+}
+
 } // namespace Ariadne
 
 #endif // THREADING_PARALLEL_HPP

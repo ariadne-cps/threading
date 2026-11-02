@@ -3,6 +3,9 @@
 
 #include <algorithm>
 #include <atomic>
+#include <bit>
+#include <cstdint>
+#include <limits>
 #include <chrono>
 #include <cfenv>
 #include <cmath>
@@ -126,6 +129,61 @@ class TestParallel : public Ariadne::Testing::ContextFixture {
         }
     }
 
+    void test_fixed_block_reduce_independent_of_workers() {
+        // Ordinary IEEE summation can depend on grouping. Fixed blocks
+        // constrain grouping without claiming a correctly rounded sum.
+        const double samples[]={1.0e16,-1.0e16,1.0,1.0e16,-1.0e16,1.0};
+        std::uint64_t reference=0u;
+        for(unsigned workers : {0u,1u,4u}) {
+            ThreadPool pool(workers);
+            for(unsigned max_lanes : {0u,1u,3u}) {
+                const auto sum=parallel_reduce_fixed_blocks(
+                    pool,0u,6u,0.0,
+                    [&](std::size_t i) { return samples[i]; },
+                    [](double a,double b) { return a+b; },
+                    ParallelOptions{3u,max_lanes,FE_TONEAREST});
+                ARIADNE_TESTING_EXPECT_EQUAL(sum,2.0);
+                const auto bits=std::bit_cast<std::uint64_t>(sum);
+                if(workers==0u && max_lanes==0u)reference=bits;
+                ARIADNE_TESTING_EXPECT_EQUAL(bits,reference);
+            }
+            ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
+        }
+    }
+
+    void test_fixed_block_reduce_exceptions_and_rounding() {
+        for(unsigned workers : {0u,1u,4u}) {
+            ThreadPool pool(workers);
+            const auto initial=std::fegetround();
+            ARIADNE_TESTING_PROVE(initial!=-1);
+            std::atomic<unsigned> maps{0u};
+            std::atomic<unsigned> reductions{0u};
+            auto result=parallel_reduce_fixed_blocks(pool,0u,19u,0u,
+                [&](std::size_t)->unsigned {
+                    if(std::fegetround()==FE_UPWARD)++maps;
+                    return 1u;
+                },
+                [&](unsigned a,unsigned b) {
+                    if(std::fegetround()==FE_UPWARD)++reductions;
+                    return a+b;
+                },ParallelOptions{4u,3u,FE_UPWARD});
+            ARIADNE_TESTING_EXPECT_EQUAL(result,19u);
+            ARIADNE_TESTING_EXPECT_EQUAL(maps.load(),19u);
+            ARIADNE_TESTING_EXPECT_EQUAL(reductions.load(),23u);
+            ARIADNE_TESTING_EXPECT_EQUAL(std::fegetround(),initial);
+            ARIADNE_TESTING_EXPECT_EXCEPTION(parallel_reduce_fixed_blocks(
+                pool,0u,16u,0u,
+                [](std::size_t i)->unsigned {
+                    if(i==0u)throw std::runtime_error("expected");
+                    return 1u;
+                },
+                [](unsigned a,unsigned b) { return a+b; },
+                ParallelOptions{2u,3u,FE_DOWNWARD}));
+            ARIADNE_TESTING_EXPECT_EQUAL(std::fegetround(),initial);
+            ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
+        }
+    }
+
     void test_portfolio_stop() {
         for(unsigned workers : {0u,2u}) {
             ThreadPool pool(workers);
@@ -176,6 +234,8 @@ int main(int argc,char** argv) {
     ARIADNE_TESTING_ADD_TEST(TestParallel,test_exception_drains_lanes);
     ARIADNE_TESTING_ADD_TEST(TestParallel,test_rounding_mode_is_scoped_per_lane);
     ARIADNE_TESTING_ADD_TEST(TestParallel,test_rounding_mode_restored_after_exception);
+    ARIADNE_TESTING_ADD_TEST(TestParallel,test_fixed_block_reduce_independent_of_workers);
+    ARIADNE_TESTING_ADD_TEST(TestParallel,test_fixed_block_reduce_exceptions_and_rounding);
     ARIADNE_TESTING_ADD_TEST(TestParallel,test_portfolio_stop);
     ARIADNE_TESTING_ADD_TEST(TestParallel,test_portfolio_exception_and_scope_join);
     return ARIADNE_TESTING_RUN_TESTS_WITH_ARGS(argc,argv);

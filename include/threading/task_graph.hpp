@@ -26,6 +26,7 @@
 #include <mutex>
 #include <functional>
 #include <stdexcept>
+#include <stop_token>
 #include <utility>
 #include <vector>
 
@@ -72,8 +73,12 @@ class TaskGraph {
     //! Validate cycles before running; workers then consume a shared ready
     //! queue. When any node throws, active nodes finish, but no more nodes
     //! are dispatched. The first observed exception is propagated.
-    //! The caller is one execution lane.
-    void run(ThreadPool& scheduler,ParallelOptions options={1u,0u}) {
+    //! The caller is one execution lane. An optional stop token prevents
+    //! new dispatches after cancellation, without forcibly interrupting
+    //! any action already running. The run returns after active actions
+    //! finish, and can be called again with a fresh token.
+    void run(ThreadPool& scheduler,ParallelOptions options={1u,0u},
+             std::stop_token stop={}) {
         if(options.grain_size==0u)
             throw std::invalid_argument("TaskGraph grain_size must be positive");
 
@@ -116,6 +121,12 @@ class TaskGraph {
         bool failed=false;
         std::exception_ptr failure;
 
+        // Locking the same mutex as the wait predicate prevents a stop
+        // notification from being lost between predicate check and wait.
+        std::stop_callback notify_on_stop(stop,[&] {
+            std::lock_guard lock(mutex);
+            changed.notify_all();
+        });
         const auto lanes=parallel_detail::lane_count(scheduler,count,options);
         auto execute=[&](std::size_t) {
             for(;;) {
@@ -123,9 +134,10 @@ class TaskGraph {
                 {
                     std::unique_lock lock(mutex);
                     changed.wait(lock,[&] {
-                        return failed || completed==count || !ready.empty();
+                        return failed || stop.stop_requested() ||
+                               completed==count || !ready.empty();
                     });
-                    if(failed || completed==count)return;
+                    if(failed || stop.stop_requested() || completed==count)return;
                     id=ready.front();
                     ready.pop_front();
                 }
@@ -143,7 +155,7 @@ class TaskGraph {
                         failed=true;
                         failure=error;
                     }
-                    if(!failed)
+                    if(!failed && !stop.stop_requested())
                         for(auto successor:successors[id])
                             if(--remaining[successor]==0u)
                                 ready.push_back(successor);

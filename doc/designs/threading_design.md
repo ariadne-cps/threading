@@ -1104,3 +1104,43 @@ Strict compiler flags and a conforming arithmetic backend remain
 necessary for mathematical guarantees; this fix establishes the
 documented thread-local rounding scope, **not** a correctly
 rounded whole reduction or bitwise worker-count independence.
+
+
+## Fixed-block reductions and cooperative DAG cancellation (2026-11-02)
+
+The reduction implementation now offers a distinct algorithm,
+\`parallel_reduce_fixed_blocks\`, whose arithmetic grouping is independent
+of worker count and per-call \`max_tasks\`. A fixed \`grain_size\` partitions
+the input into contiguous blocks. Each block reduces in index order under
+its own scoped rounding environment; partials are combined serially in
+block-index order under the same explicitly configured rounding mode.
+The number of concurrently executing *lanes* may vary without altering
+the block boundaries or combining order. This uses O(number of blocks)
+memory and is not intended for ultra-fine-grained elements.
+
+**Numerical contract:** fixed grouping is weaker than a correctly
+rounded reduction, exact accumulation, or bitwise agreement between
+architectures/compilers. Bitwise repeatability on the same platform
+assumes pure map/reduce operations, identical input, a compatible
+rounding environment, and compiler/FP backend compliance with strict
+floating-point semantics. Arbitrary parallel \`parallel_reduce\` remains
+available when worker-dependent grouping is acceptable. This option is
+useful for DNN experiments and scientific workloads where comparing
+results across worker counts matters, without forcing a numeric policy
+on the rest of the threading system.
+
+\`TaskGraph::run(pool,options,stop_token)\` now accepts an optional external
+cancellation token. Once stop is requested, waiting executor lanes wake
+and no further graph nodes are dispatched. Currently executing actions
+are **not** forcibly interrupted, and run returns only after they have
+joined. A subsequent run with a fresh token is supported. Graph
+validation still occurs before executing application callbacks, even
+when cancellation is pre-requested. To avoid lost wake-ups, the stop
+callback synchronizes with the same mutex used for the ready queue.
+This feature is a scheduling-level stop, not cancellation of a DNN
+kernel that has already begun.
+
+Tests cover 0/1/4 worker counts, fixed-block floating-point bit
+patterns across concurrency limits, map/reduce rounding scopes,
+exceptions and restoration, pre-requested stop and stop requested
+from an executing graph node. No performance claims are inferred.
