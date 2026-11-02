@@ -29,6 +29,7 @@
 #include <utility>
 #include <vector>
 
+#include "threading/floating_point_environment.hpp"
 #include "threading/task_group.hpp"
 #include "threading/thread_pool.hpp"
 
@@ -41,6 +42,7 @@ namespace Ariadne {
 struct ParallelOptions {
     std::size_t grain_size=256u;
     std::size_t max_tasks=0u;
+    std::optional<int> rounding_mode=std::nullopt;
 };
 
 namespace parallel_detail {
@@ -104,6 +106,7 @@ void parallel_for(ThreadPool& scheduler,std::size_t first,
     const auto lanes=parallel_detail::lane_count(scheduler,count,options);
     if(lanes==0u)return;
     auto run_lane=[&](std::size_t lane) {
+        ScopedRoundingMode rounding(options.rounding_mode);
         const auto [a,b]=parallel_detail::lane_interval(count,lanes,lane);
         for(std::size_t i=a;i<b;++i)
             std::invoke(fn,first+i);
@@ -117,6 +120,9 @@ void parallel_for(ThreadPool& scheduler,std::size_t first,
 //! The reduction is deterministic for a fixed lane count, subject to the
 //! map/reduce functions and their side effects. Floating-point answers may
 //! change with lane count because regrouping changes rounding.
+//! Optional rounding_mode applies independently to each execution lane and
+//! the final combination, restoring each calling thread on scope exit.
+//! Strict floating-point compilation is still required for rigor.
 //! map and reduce may be used concurrently: both must be thread-safe.
 template<class T,class Map,class Reduce>
 T parallel_reduce(ThreadPool& scheduler,std::size_t first,
@@ -136,6 +142,7 @@ T parallel_reduce(ThreadPool& scheduler,std::size_t first,
         partials[lane]=std::move(result);
     };
     parallel_detail::execute_lanes(scheduler,lanes,run_lane);
+    ScopedRoundingMode rounding(options.rounding_mode);
     T result=std::move(partials[0u]);
     for(std::size_t lane=1u;lane<lanes;++lane)
         result=std::invoke(reduce,std::move(result),std::move(partials[lane]));

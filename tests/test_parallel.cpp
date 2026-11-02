@@ -3,6 +3,8 @@
 
 #include <atomic>
 #include <chrono>
+#include <cfenv>
+#include <cmath>
 #include <cstddef>
 #include <stdexcept>
 #include <thread>
@@ -68,6 +70,36 @@ class TestParallel : public Ariadne::Testing::ContextFixture {
         ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
     }
 
+    void test_rounding_mode_is_scoped_per_lane() {
+        for(unsigned workers : {0u,1u,4u}) {
+            ThreadPool pool(workers);
+            const int caller_rounding=std::fegetround();
+            ARIADNE_TESTING_PROVE(caller_rounding!=-1);
+            std::atomic<unsigned> observed{0u};
+            parallel_for(pool,0u,4096u,[&](std::size_t) {
+                if(std::fegetround()==FE_DOWNWARD)
+                    observed.fetch_add(1u,std::memory_order_relaxed);
+            },ParallelOptions{1u,5u,FE_DOWNWARD});
+            ARIADNE_TESTING_EXPECT_EQUAL(observed.load(),4096u);
+            ARIADNE_TESTING_EXPECT_EQUAL(std::fegetround(),caller_rounding);
+
+            std::atomic<unsigned> reduction_checks{0u};
+            auto result=parallel_reduce(pool,0u,128u,0u,
+                [&](std::size_t)->unsigned {
+                    if(std::fegetround()==FE_UPWARD)++reduction_checks;
+                    return 1u;
+                },
+                [&](unsigned a,unsigned b) {
+                    if(std::fegetround()==FE_UPWARD)++reduction_checks;
+                    return a+b;
+                },ParallelOptions{1u,5u,FE_UPWARD});
+            ARIADNE_TESTING_EXPECT_EQUAL(result,128u);
+            ARIADNE_TESTING_PROVE(reduction_checks.load()>=128u);
+            ARIADNE_TESTING_EXPECT_EQUAL(std::fegetround(),caller_rounding);
+            ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
+        }
+    }
+
     void test_portfolio_stop() {
         for(unsigned workers : {0u,2u}) {
             ThreadPool pool(workers);
@@ -116,6 +148,7 @@ int main(int argc,char** argv) {
     ARIADNE_TESTING_ADD_TEST(TestParallel,test_zero_and_invalid_ranges);
     ARIADNE_TESTING_ADD_TEST(TestParallel,test_reduce_deterministic);
     ARIADNE_TESTING_ADD_TEST(TestParallel,test_exception_drains_lanes);
+    ARIADNE_TESTING_ADD_TEST(TestParallel,test_rounding_mode_is_scoped_per_lane);
     ARIADNE_TESTING_ADD_TEST(TestParallel,test_portfolio_stop);
     ARIADNE_TESTING_ADD_TEST(TestParallel,test_portfolio_exception_and_scope_join);
     return ARIADNE_TESTING_RUN_TESTS_WITH_ARGS(argc,argv);

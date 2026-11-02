@@ -27,6 +27,7 @@
 #include "threading/bounded_channel.hpp"
 #include "threading/concurrency_budget.hpp"
 #include "threading/buffer.hpp"
+#include "threading/floating_point_environment.hpp"
 #include "threading/parallel.hpp"
 #include "threading/parallel_first.hpp"
 #include "threading/task_graph.hpp"

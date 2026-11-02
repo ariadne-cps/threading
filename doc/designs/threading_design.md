@@ -1017,3 +1017,34 @@ layers or dynamically schedule nodes as soon as their predecessors
 finish. Before optimizing either path, collect benchmark evidence
 from actual CDCL and DNN components. README remains deliberately
 restricted to introduction, features and build.
+
+
+## Scoped per-task rounding support (2026-11-02)
+
+`ScopedRoundingMode` is a C++20 RAII wrapper that queries the current
+thread's active floating-point rounding mode, switches to an explicitly
+requested mode, and restores it on leaving the scope (including via
+exceptions). The `ParallelOptions::rounding_mode` optional integer,
+whose values should be standard `FE_TONEAREST`, `FE_DOWNWARD`,
+`FE_UPWARD`, or `FE_TOWARDZERO`, applies a separate scope on
+every execution lane in `parallel_for` and `parallel_reduce`.
+The latter also scopes the sequential combination of partials,
+which runs on the calling thread. The default remains unchanged.
+
+**Limits and numerical rigor:** This controls only the current
+thread's floating-point environment; pool worker state is restored
+after each execution. Correct directed rounding additionally requires
+the numerical backend and compiler options to honor dynamic rounding
+and to prohibit reassociation/fast-math transformations. A correctly
+rounded *individual operation* does not make a changed parallel
+reduction tree reproduce the same bits, and interval inclusion
+requires correct outward rounding for all relevant operations.
+The API makes no claim to compute a correctly rounded *whole*
+reduction or exact reproducible accumulator. Non-default rounding
+support on a platform is checked via `fesetround`; unsupported modes
+fail with an exception.
+
+Regression checks exercise the mode inside worker/caller task bodies
+and reduction combiners on 0/1/4 worker pools, plus caller restoration.
+They do not substitute for numerical validation of an interval
+arithmetic library, strict-mode compiler flags, or proof obligations.
