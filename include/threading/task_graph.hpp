@@ -43,15 +43,18 @@ class TaskGraph {
     /** @brief Add an action and return its stable node identifier.
      *  @tparam F Callable convertible to std::function<void()>.
      *  @param fn Action to execute; must remain valid through run().
-     *  @throws std::invalid_argument if the action is empty.
+     *  @throws std::invalid_argument if the action is empty; the graph
+     *          remains unchanged when this precondition is violated.
      *  @note Do not mutate the graph while it is executing.
      */
     template<class F>
     TaskId add_task(F&& fn) {
-        const auto id=_nodes.size();
-        _nodes.push_back(Node{std::function<void()>(std::forward<F>(fn)),{}});
-        if(!_nodes.back().action)
+        // Reject invalid actions before mutating the graph.
+        std::function<void()> action(std::forward<F>(fn));
+        if(!action)
             throw std::invalid_argument("TaskGraph task cannot be empty");
+        const auto id=_nodes.size();
+        _nodes.push_back(Node{std::move(action),{}});
         return id;
     }
 

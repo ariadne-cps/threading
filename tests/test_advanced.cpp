@@ -3,6 +3,7 @@
 #include <atomic>
 #include <barrier>
 #include <cstddef>
+#include <functional>
 #include <chrono>
 #include <thread>
 #include <optional>
@@ -260,8 +261,16 @@ class TestAdvanced : public Ariadne::Testing::ContextFixture {
         ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
 
         TaskGraph one;
+        // A rejected action must not consume an ID or leave a node that
+        // would be invoked by a later run().
+        std::function<void()> empty_action;
+        ARIADNE_TESTING_EXPECT_EXCEPTION(one.add_task(empty_action));
+        ARIADNE_TESTING_EXPECT_EQUAL(one.size(),size_t{0});
         std::atomic<unsigned> calls{0u};
-        auto task=one.add_task([&] { ++calls; });
+        std::function<void()> valid_action=[&] { ++calls; };
+        auto task=one.add_task(valid_action);
+        ARIADNE_TESTING_EXPECT_EQUAL(task,TaskGraph::TaskId{0});
+        ARIADNE_TESTING_EXPECT_EQUAL(one.size(),size_t{1});
         // Both endpoints are checked: an invalid predecessor must be
         // rejected even when the successor is valid.
         ARIADNE_TESTING_EXPECT_EXCEPTION(one.add_dependency(99u,task));
