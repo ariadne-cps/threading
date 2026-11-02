@@ -139,6 +139,53 @@ class TestThreadManager : public Ariadne::Testing::ContextFixture {
         ThreadManager::instance().set_concurrency(0);
     }
 
+    void test_cooperative_manager_task_acquisition() {
+        auto& manager=ThreadManager::instance();
+        manager.set_concurrency(0);
+        ARIADNE_TESTING_PROVE(!manager.try_run_one_task());
+        ARIADNE_TESTING_PROVE(!manager.try_run_task(ThreadPool::Ticket{}));
+
+        if(manager.maximum_concurrency()==0) {
+            ctx().skip("requires at least one hardware thread");
+            return;
+        }
+
+        // Hold the sole worker busy so both pending tickets must be
+        // acquired by the calling thread, not raced by the worker.
+        std::promise<void> release_worker;
+        auto release_signal=release_worker.get_future().share();
+        std::atomic<bool> worker_started{false};
+        manager.set_concurrency(1);
+        struct Cleanup {
+            ThreadManager& manager;
+            std::promise<void>& release;
+            ~Cleanup() {
+                try { release.set_value(); } catch (...) { }
+                try { manager.set_concurrency(0); } catch (...) { }
+            }
+        } cleanup{manager,release_worker};
+        auto parked=manager.enqueue([&] {
+            worker_started.store(true);
+            release_signal.wait();
+        });
+        ARIADNE_TESTING_EXPECT_ATOMIC(worker_started,
+            [](bool value) { return value; },5s);
+
+        std::atomic<unsigned> executions{0u};
+        auto targeted=manager.enqueue_ticket([&] { ++executions; });
+        auto generic=manager.enqueue_ticket([&] { ++executions; });
+        ARIADNE_TESTING_PROVE(manager.try_run_task(targeted));
+        ARIADNE_TESTING_PROVE(!manager.try_run_task(targeted));
+        ARIADNE_TESTING_PROVE(manager.try_run_one_task());
+        ARIADNE_TESTING_PROVE(!manager.try_run_task(generic));
+        ARIADNE_TESTING_PROVE(!manager.try_run_one_task());
+        ARIADNE_TESTING_EXPECT_EQUAL(executions.load(),2u);
+
+        release_worker.set_value();
+        parked.get();
+        manager.set_concurrency(0);
+    }
+
     void test_change_concurrency_and_log_scheduler() {
         ARIADNE_TESTING_EXPECT_NO_THROW(ThreadManager::instance().set_concurrency(1));
         ARIADNE_TESTING_EXPECT_EXCEPTION(ThreadManager::instance().set_logging_immediate_scheduler());
@@ -163,6 +210,7 @@ int main(int argc, char** argv) {
     ARIADNE_TESTING_ADD_TEST(TestThreadManager, test_void_task_with_no_threads);
     ARIADNE_TESTING_ADD_TEST(TestThreadManager, test_concurrency_read_during_shrink);
     ARIADNE_TESTING_ADD_TEST(TestThreadManager, test_worker_cannot_shrink_manager);
+    ARIADNE_TESTING_ADD_TEST(TestThreadManager, test_cooperative_manager_task_acquisition);
     ARIADNE_TESTING_ADD_TEST(TestThreadManager, test_change_concurrency_and_log_scheduler);
     return ARIADNE_TESTING_RUN_TESTS_WITH_ARGS(argc, argv);
 }
