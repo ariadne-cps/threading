@@ -81,33 +81,37 @@ class TestWorkStealingPolicy : public Ariadne::Testing::ContextFixture {
         // Only one worker can run: it fills its own LIFO with descendants.
         // An external FIFO submission must be chosen before all descendants
         // run, despite the continuously nonempty local queue.
-        ThreadPool pool(1);
+        // Keep captured state alive until the pool has drained all children.
         std::atomic<int> local_executed{0};
         std::atomic<bool> release_parent{false};
         std::promise<void> descendants_ready;
         auto ready=descendants_ready.get_future();
-        auto parent=pool.enqueue([&] {
-            for(int i=0;i<48;++i) {
-                pool.enqueue([&] {
-                    local_executed.fetch_add(1,std::memory_order_relaxed);
-                });
-            }
-            descendants_ready.set_value();
-            while(!release_parent.load(std::memory_order_acquire))
-                std::this_thread::yield();
-        });
-        ARIADNE_TESTING_EXPECT_READY(ready,10s);
-        auto external=pool.enqueue([&] {
-            return local_executed.load(std::memory_order_relaxed);
-        });
-        release_parent.store(true,std::memory_order_release);
-        ARIADNE_TESTING_EXPECT_READY(external,10s);
-        const int local_before_external=external.get();
-        parent.get();
-        // The local preference limit is eight consecutive local picks.
-        ARIADNE_TESTING_PROVE(local_before_external<=8);
-        // Destruction still drains every child, even though their futures
-        // are intentionally discarded above.
+        {
+            ThreadPool pool(1);
+            auto parent=pool.enqueue([&] {
+                for(int i=0;i<48;++i) {
+                    pool.enqueue([&] {
+                        local_executed.fetch_add(1,std::memory_order_relaxed);
+                    });
+                }
+                descendants_ready.set_value();
+                while(!release_parent.load(std::memory_order_acquire))
+                    std::this_thread::yield();
+            });
+            ARIADNE_TESTING_EXPECT_READY(ready,10s);
+            auto external=pool.enqueue([&] {
+                return local_executed.load(std::memory_order_relaxed);
+            });
+            release_parent.store(true,std::memory_order_release);
+            ARIADNE_TESTING_EXPECT_READY(external,10s);
+            const int local_before_external=external.get();
+            parent.get();
+            // The local preference limit is eight consecutive local picks.
+            ARIADNE_TESTING_PROVE(local_before_external<=8);
+            // The destructor must drain the remaining descendants, whose
+            // futures are intentionally discarded above.
+        }
+        ARIADNE_TESTING_EXPECT_EQUAL(local_executed.load(),48);
     }
 
     void test_zero_workers_help() {
