@@ -11,6 +11,12 @@ class TestObservation : public Ariadne::Testing::ContextFixture {
     using ContextFixture::ContextFixture;
 
     void test_snapshot_transitions() {
+        // An empty workload is already complete by definition.
+        WorkloadSnapshot empty;
+        ARIADNE_TESTING_EXPECT_EQUAL(empty.total(),size_t{0});
+        ARIADNE_TESTING_EXPECT_EQUAL(empty.completion_rate(),1.0);
+        ARIADNE_TESTING_PROVE(empty.has_finished());
+
         WorkloadAdvancement progress(3);
         WorkloadObservable const& observable=progress;
         auto initial=observable.snapshot();
@@ -28,6 +34,13 @@ class TestObservation : public Ariadne::Testing::ContextFixture {
         ARIADNE_TESTING_EXPECT_EQUAL(current.total(),3u);
         ARIADNE_TESTING_PROVE(!current.has_finished());
         progress.add_to_processing(2);
+        // Nothing waits, but two tasks are still running: not finished.
+        auto running=observable.snapshot();
+        ARIADNE_TESTING_EXPECT_EQUAL(running.waiting,size_t{0});
+        ARIADNE_TESTING_EXPECT_EQUAL(running.processing,size_t{2});
+        ARIADNE_TESTING_EXPECT_EQUAL(running.completed,size_t{1});
+        ARIADNE_TESTING_EXPECT_EQUAL(running.total(),size_t{3});
+        ARIADNE_TESTING_PROVE(!running.has_finished());
         progress.add_to_completed(2);
         ARIADNE_TESTING_PROVE(observable.snapshot().has_finished());
         ARIADNE_TESTING_EXPECT_EQUAL(observable.snapshot().completion_rate(),1.0);
