@@ -72,7 +72,7 @@ scheduler, theme, verbosity and `-c`/`--concurrency` options. The concurrency
 option selects the number of workers in the benchmark pool (including zero).
 The global ThreadManager is reset to zero before timing, to avoid competing
 background worker threads. Without the option, up to four workers are used.
-`--mode flat|recursive|micro|both` chooses the scenarios; `both` covers flat and recursive. `--help` lists the options.
+`--mode flat|recursive|micro|breakdown|both` chooses the scenarios; `both` covers flat and recursive. `--help` lists the options.
 
 The scheduler runs identical work and verify their results against a
 deterministic reference checksum. Each measured iteration constructs and warms a fresh pool, measures it,
@@ -143,3 +143,22 @@ Coverage and sanitizer builds are intentionally separate.
 ## License
 
 Threading is released under the GNU General Public License v3.0.
+
+### Isolating the zero-worker fork/join costs
+
+The `breakdown` benchmark compares five variants of the **same**
+checksum at `--concurrency 0`: direct sequential evaluation, a packaged
+task and shared future executed inline (`Future only`), a targeted queue
+ticket without a future (`Ticket only`), a full `TaskHandle` without a
+`TaskGroup`, and `TaskGroup`. Results show per-stage medians and paired
+differences relative to sequential execution. Stages overlap and are
+**not** independent additive allocations or exact costs of individual
+library primitives.
+
+```bash
+./build-release/benchmarks/benchmark_thread_pool --mode breakdown --concurrency 0 --tasks 16384 --work 1 --samples 9
+```
+
+Each sample warms and verifies all stages, runs them in a rotating order
+against one zero-worker pool, and checks for leftover tasks. Do not
+interpret these results as evidence of multithreaded speedup.

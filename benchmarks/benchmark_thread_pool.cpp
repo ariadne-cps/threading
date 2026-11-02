@@ -27,6 +27,9 @@
 #include "logging/logging.hpp"
 
 #include <algorithm>
+#include <array>
+#include <future>
+#include <memory>
 #include <bit>
 #include <chrono>
 #include <cmath>
@@ -108,10 +111,10 @@ List<ArgumentParser> benchmark_parsers(Options& options) {
             return [&options,n] { options.samples=n; };
         }));
     parsers.append(make_valued_argument_parser(
-        "m","mode","Workload: flat, recursive, micro, both (default both)",
+        "m","mode","Workload: flat, recursive, micro, breakdown, both (default both)",
         [&options](String const& value) -> VoidFunction {
             const std::string mode(value);
-            if(mode!="flat" && mode!="recursive" && mode!="micro" && mode!="both")
+            if(mode!="flat" && mode!="recursive" && mode!="micro" && mode!="breakdown" && mode!="both")
                 throw std::invalid_argument("invalid mode");
             return [&options,mode] { options.mode=mode; };
         }));
@@ -331,6 +334,107 @@ MicroComparison compare_micro(Options const& options,unsigned workers) {
             median(std::move(paired_deltas))};
 }
 
+
+enum class BreakdownStage : unsigned {
+    Sequential, Future, Ticket, Handle, Group
+};
+
+constexpr unsigned breakdown_stage_count=5u;
+
+// These paths intentionally overlap: per-stage deltas are not additive.
+// Run only with a zero-worker pool, so a local reference never escapes scope.
+std::uint64_t breakdown_run(ThreadPool& scheduler,unsigned tasks,
+                            unsigned work,BreakdownStage stage) {
+    if(stage==BreakdownStage::Sequential)
+        return micro_reference(tasks,work);
+    if(stage==BreakdownStage::Group)
+        return micro_run(scheduler,tasks,work);
+    std::uint64_t total=0;
+    for(unsigned i=0u;i<tasks;++i) {
+        const auto seed=static_cast<std::uint64_t>(i);
+        const auto left_work=[i,work] {
+            return work_kernel(left_tag+static_cast<std::uint64_t>(i),work);
+        };
+        if(stage==BreakdownStage::Ticket) {
+            std::uint64_t left=0u;
+            auto ticket=scheduler.enqueue_ticket([&left,left_work] {
+                left=left_work();
+            });
+            const auto right=work_kernel(right_tag+seed,work);
+            if(!scheduler.try_run_task(ticket))
+                throw std::runtime_error("zero-worker ticket was not pending");
+            total+=combine(left,right);
+        } else {
+            auto task=std::make_shared<std::packaged_task<std::uint64_t()>>(left_work);
+            auto future=task->get_future().share();
+            if(stage==BreakdownStage::Future) {
+                (*task)();
+                const auto right=work_kernel(right_tag+seed,work);
+                total+=combine(future.get(),right);
+            } else {
+                auto ticket=scheduler.enqueue_ticket([task] { (*task)(); });
+                auto try_execute=[&scheduler,ticket] {
+                    return scheduler.try_run_task(ticket);
+                };
+                TaskHandle<ThreadPool,std::uint64_t> handle(
+                    scheduler,std::move(future),try_execute);
+                const auto right=work_kernel(right_tag+seed,work);
+                total+=combine(handle.get(),right);
+            }
+        }
+    }
+    return total;
+}
+
+struct BreakdownComparison {
+    std::array<Statistics,breakdown_stage_count> stats;
+    std::array<double,breakdown_stage_count> delta_ns_per_task;
+};
+
+BreakdownComparison compare_breakdown(Options const& options) {
+    const auto reference=micro_reference(options.tasks,options.work);
+    std::array<std::vector<double>,breakdown_stage_count> measurements;
+    std::array<std::vector<double>,breakdown_stage_count> deltas;
+    for(unsigned stage=0u;stage<breakdown_stage_count;++stage) {
+        measurements[stage].reserve(options.samples);
+        deltas[stage].reserve(options.samples);
+    }
+    for(unsigned sample=0u;sample<options.samples;++sample) {
+        ThreadPool scheduler(0);
+        std::array<double,breakdown_stage_count> elapsed{};
+        for(unsigned stage=0u;stage<breakdown_stage_count;++stage) {
+            const auto selected=static_cast<BreakdownStage>(stage);
+            if(breakdown_run(scheduler,options.tasks,options.work,selected)!=reference)
+                throw std::runtime_error("breakdown warm-up checksum mismatch");
+            if(scheduler.queue_size()!=0u)
+                throw std::runtime_error("breakdown warm-up left queued tasks");
+        }
+        // Rotate the measurement order to limit fixed ordering bias.
+        for(unsigned offset=0u;offset<breakdown_stage_count;++offset) {
+            const unsigned stage=(offset+sample)%breakdown_stage_count;
+            auto run=[&] {
+                return breakdown_run(scheduler,options.tasks,options.work,
+                                     static_cast<BreakdownStage>(stage));
+            };
+            elapsed[stage]=timed_sample(run,reference);
+            if(scheduler.queue_size()!=0u)
+                throw std::runtime_error("breakdown sample left queued tasks");
+        }
+        for(unsigned stage=0u;stage<breakdown_stage_count;++stage) {
+            measurements[stage].push_back(elapsed[stage]);
+            deltas[stage].push_back(
+                (elapsed[stage]-elapsed[0])*1.0e6/
+                static_cast<double>(options.tasks));
+        }
+    }
+    BreakdownComparison result{};
+    for(unsigned stage=0u;stage<breakdown_stage_count;++stage) {
+        result.stats[stage]=statistics(measurements[stage]);
+        result.delta_ns_per_task[stage]=median(std::move(deltas[stage]));
+    }
+    return result;
+}
+
 void print_statistics(std::string const& label,Statistics const& values,
                       std::string const& unit) {
     LOGGING_PRINTLN(std::left<<std::setw(19)<<label<<std::right
@@ -339,6 +443,29 @@ void print_statistics(std::string const& label,Statistics const& values,
         <<std::setw(13)<<values.minimum_ms
         <<std::setw(13)<<values.maximum_ms
         <<std::setw(13)<<values.mad_ms<<"  "<<unit)
+}
+
+void report_breakdown(Options const& options) {
+    const auto values=compare_breakdown(options);
+    constexpr std::array<char const*,breakdown_stage_count> labels={
+        "Sequential","Future only","Ticket only","Handle, no group","TaskGroup"
+    };
+    LOGGING_PRINTLN(" ")
+    LOGGING_PRINTLN("Workload=breakdown | workers=0 | work="<<options.work
+        <<" | iterations="<<options.tasks<<" | samples="<<options.samples)
+    LOGGING_PRINTLN(std::left<<std::setw(19)<<"Execution"
+        <<std::right<<std::setw(13)<<"Median"
+        <<std::setw(13)<<"Min"
+        <<std::setw(13)<<"Max"
+        <<std::setw(13)<<"MAD"<<"  Unit")
+    LOGGING_PRINTLN(std::string(81u,'-'))
+    for(unsigned stage=0u;stage<breakdown_stage_count;++stage) {
+        print_statistics(labels[stage],values.stats[stage],"ms");
+        LOGGING_PRINTLN("  paired delta vs sequential: "
+            <<std::fixed<<std::setprecision(1)
+            <<values.delta_ns_per_task[stage]<<" ns/iteration")
+    }
+    LOGGING_PRINTLN("Stages overlap; differences are NOT additive component costs.")
 }
 
 void report(std::string const& mode,Options const& options,unsigned workers) {
@@ -437,9 +564,14 @@ int main(int argc,const char* argv[]) {
         if(options.cutoff_sweep && options.cutoff_depth!=0u)
             throw std::invalid_argument(
                 "--cutoff-sweep cannot be combined with --cutoff-depth");
-        if(options.cutoff_sweep && (options.mode=="flat" || options.mode=="micro"))
+        if(options.cutoff_sweep && options.mode!="recursive" && options.mode!="both")
             throw std::invalid_argument(
                 "--cutoff-sweep requires a recursive workload");
+
+        if(options.mode=="breakdown" &&
+           (workers!=0u || options.sweep || options.cutoff_sweep))
+            throw std::invalid_argument(
+                "breakdown requires --concurrency 0 and no sweep");
 
         LOGGING_PRINTLN("ThreadPool work-stealing benchmark (Release recommended)")
         LOGGING_PRINTLN("tasks="<<options.tasks<<"  depth="<<options.depth
@@ -461,7 +593,9 @@ int main(int argc,const char* argv[]) {
                 report("micro",selected,nworkers);
         };
 
-        if(options.cutoff_sweep) {
+        if(options.mode=="breakdown") {
+            report_breakdown(options);
+        } else if(options.cutoff_sweep) {
             LOGGING_PRINTLN("Cutoff sweep: recursive only, workers="<<workers
                 <<", work="<<options.work)
             // Evaluate even cutoffs, plus the full sequential baseline

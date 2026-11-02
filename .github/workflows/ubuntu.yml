@@ -62,6 +62,7 @@ jobs:
           cmake --build "${{ runner.workspace }}/build" --parallel "$NPROC" --target benchmark_thread_pool
           "${{ runner.workspace }}/build/benchmarks/benchmark_thread_pool" --mode micro --concurrency 0 --tasks 256 --work 1 --samples 3
           "${{ runner.workspace }}/build/benchmarks/benchmark_thread_pool" --mode micro --concurrency 2 --tasks 256 --work 1 --samples 3
+          "${{ runner.workspace }}/build/benchmarks/benchmark_thread_pool" --mode breakdown --concurrency 0 --tasks 256 --work 1 --samples 3
 
       - name: Install Release library
         if: matrix.build_type == 'Release'

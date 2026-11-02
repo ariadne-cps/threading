@@ -368,3 +368,26 @@ The worker notification change and the independent drain epoch from
 Two additional correctness tests introduced by the experiment are
 retained. This is a source-level rollback, not a new performance
 measurement; validation of the rollback commit by CI is pending.
+
+
+## Fine-grained TaskGroup cost decomposition (2026-11-02)
+
+A `breakdown` mode was added to the existing Release benchmark so that
+fine-grained costs can be compared without competition from worker
+threads. It runs a deterministic 0-worker workload with identical
+integer work and checksum through five overlapping paths:
+sequential; packaged task/shared future run directly; scheduler ticket
+and targeted execution without a future; packaged task plus a manual
+`TaskHandle` without group bookkeeping; full `TaskGroup::fork/get/join`.
+Both warm-up and timed runs check the reference checksum and drained
+queue. Per-stage paired differences are relative to sequential, and the
+stage order rotates. The stages **overlap**: their differences cannot
+be added to infer individual allocation costs. In particular, the
+manual-handle minus group difference *suggests*, but does not prove,
+the cost of owning/recording a joiner. This benchmark is diagnostic
+instrumentation, not a scheduler optimization.
+
+No measured stage results exist at this commit. The pre-existing
+0-worker micro baseline remains 399.8/451.8/469.9 ns/fork for 1/128/1024
+rounds. A comparison on the same machine and Release configuration
+is required before changing queue/ticket or future lifetime machinery.
