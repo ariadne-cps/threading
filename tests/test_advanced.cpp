@@ -62,6 +62,22 @@ class TestAdvanced : public Ariadne::Testing::ContextFixture {
             ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
             force_no_result=false;
 
+            // Both preflight exits must avoid invoking any candidate.
+            // Reuse the same callback (F&) so these branches belong to
+            // the same function instantiation as the normal search.
+            const auto before_preflight=calls.load();
+            auto empty_search=parallel_first_result(pool,0u,search);
+            ARIADNE_TESTING_PROVE(!empty_search);
+            ARIADNE_TESTING_EXPECT_EQUAL(calls.load(),before_preflight);
+
+            std::stop_source already_stopped;
+            already_stopped.request_stop();
+            auto pre_cancelled=parallel_first_result(
+                pool,3u,search,0u,already_stopped.get_token());
+            ARIADNE_TESTING_PROVE(!pre_cancelled);
+            ARIADNE_TESTING_EXPECT_EQUAL(calls.load(),before_preflight);
+            ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
+
             const auto before_cancel=calls.load();
             request_external_stop=true;
             auto interrupted=parallel_first_result(
