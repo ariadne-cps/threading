@@ -140,21 +140,16 @@ class TaskGroup {
         auto future = task->get_future().share();
         // Ticket-based acquisition ensures that both a waiting handle and
         // a worker use the scheduler's single physical queue entry.
-        auto ticket=_scheduler.enqueue_ticket([task] { (*task)(); });
-        auto handle=[&]() {
-            if constexpr (std::is_same_v<std::decay_t<decltype(ticket)>,
-                                         ThreadPool::Ticket>) {
-                return TaskHandle<Scheduler,Result>(
-                    _scheduler,std::move(future),std::move(ticket));
-            } else {
-                // Support custom scheduler ticket types as before.
-                auto try_execute=[scheduler=&_scheduler,ticket] {
-                    return scheduler->try_run_task(ticket);
-                };
-                return TaskHandle<Scheduler,Result>(
-                    _scheduler,std::move(future),try_execute);
-            }
-        }();
+        const auto ticket=_scheduler.enqueue_ticket([task] { (*task)(); });
+        // The callback representation retains targeted, exact-once helping.
+        // In one-worker tests it lets the caller acquire more short tasks
+        // than the direct-ticket representation, avoiding costly handoffs.
+        // Keep direct ticket handles available for explicit use and A/B tests.
+        auto try_execute=[scheduler=&_scheduler,ticket] {
+            return scheduler->try_run_task(ticket);
+        };
+        TaskHandle<Scheduler,Result> handle(
+            _scheduler,std::move(future),try_execute);
         try {
             // The common recursive fork/compute/join pattern owns one child.
             // Store its joiner directly; do not allocate a vector buffer.

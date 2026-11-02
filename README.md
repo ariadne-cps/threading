@@ -193,7 +193,12 @@ ticket. The comparison isolates acquisition *representation* under
 the present `TaskHandle` implementation; it does **not** compare
 the entire old and new repository binaries. The `TaskGroup` result
 contains additional group bookkeeping and is not a third
-interchangeable handle variant.
+interchangeable handle variant. After the ownership diagnostic
+identified a repeated one-worker regression, `TaskGroup::fork()`
+uses the callback acquisition path by default; the direct-ticket
+`TaskHandle` constructor is retained for explicit use and for
+the A/B diagnostic. The experiments should not be interpreted as
+a universal ranking of acquisition mechanisms.
 
 ### Diagnosing task ownership
 

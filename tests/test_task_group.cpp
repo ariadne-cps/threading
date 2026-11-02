@@ -25,6 +25,8 @@
 #include <atomic>
 #include <chrono>
 #include <functional>
+#include <memory>
+#include <future>
 #include <stdexcept>
 #include <thread>
 #include <vector>
@@ -216,6 +218,26 @@ class TestTaskGroup : public Ariadne::Testing::ContextFixture {
         ARIADNE_TESTING_EXPECT_EQUAL(count.load(),1);
     }
 
+    void test_explicit_direct_ticket_handle() {
+        // Direct handles remain available for experimentation even though
+        // TaskGroup uses the callback representation by default.
+        for(unsigned workers : {0u,1u,2u}) {
+            ThreadPool pool(workers);
+            std::atomic<unsigned> count{0u};
+            auto task=std::make_shared<std::packaged_task<int()>>([&count] {
+                count.fetch_add(1u,std::memory_order_relaxed);
+                return 77;
+            });
+            auto future=task->get_future().share();
+            auto ticket=pool.enqueue_ticket([task] { (*task)(); });
+            TaskHandle<ThreadPool,int> handle(
+                pool,std::move(future),std::move(ticket));
+            ARIADNE_TESTING_EXPECT_EQUAL(handle.get(),77);
+            ARIADNE_TESTING_EXPECT_EQUAL(count.load(),1u);
+            ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
+        }
+    }
+
     void test_generic_future_helping_is_preserved() {
         // The public generic constructor still executes pending scheduler
         // work while waiting, without requiring a targeted ticket.
@@ -285,6 +307,7 @@ int main(int argc, char** argv) {
     ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_ticket_queue_churn);
     ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_destructor_joins);
     ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_void_handle);
+    ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_explicit_direct_ticket_handle);
     ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_generic_future_helping_is_preserved);
     ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_thread_manager_sequential_mode);
     ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_thread_manager_worker_mode);

@@ -711,3 +711,67 @@ untimed and must not be mixed with the existing speed results.
 then evaluate whether measured ownership shifts correlate with
 the observed slowdown. A rollback remains a legitimate
 decision if the one-worker end-to-end regression persists.
+
+
+## Ownership diagnostic evidence and TaskGroup default rollback (2026-11-02)
+
+The user ran the untimed `--mode ownership --concurrency 1 --tasks
+16384 --samples 9` benchmark at work=128 and work=1024 on the
+direct-ticket candidate `6f43f6b`. Each row below counts exactly
+16,384 executions in either the callback or direct variant.
+The instrumented code checks the executing thread ID and increments
+a relaxed atomic in each task, so these counts **do not directly
+describe the ownership distribution of uninstrumented timed runs**.
+
+| Rounds | Sample | Callback caller | Callback worker | Direct caller | Direct worker | Direct - callback caller share (pp) |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 128 | 1 | 4989 | 11395 | 991 | 15393 | -24.4 |
+| 128 | 2 | 8400 | 7984 | 282 | 16102 | -49.5 |
+| 128 | 3 | 8033 | 8351 | 404 | 15980 | -46.6 |
+| 128 | 4 | 7845 | 8539 | 469 | 15915 | -45.0 |
+| 128 | 5 | 8052 | 8332 | 270 | 16114 | -47.5 |
+| 128 | 6 | 8512 | 7872 | 1612 | 14772 | -42.1 |
+| 128 | 7 | 8138 | 8246 | 186 | 16198 | -48.5 |
+| 128 | 8 | 7931 | 8453 | 295 | 16089 | -46.6 |
+| 128 | 9 | 7859 | 8525 | 279 | 16105 | -46.3 |
+| 1024 | 1 | 3881 | 12503 | 361 | 16023 | -21.5 |
+| 1024 | 2 | 3648 | 12736 | 2624 | 13760 | -6.2 |
+| 1024 | 3 | 4433 | 11951 | 1689 | 14695 | -16.7 |
+| 1024 | 4 | 3853 | 12531 | 2174 | 14210 | -10.2 |
+| 1024 | 5 | 3819 | 12565 | 638 | 15746 | -19.4 |
+| 1024 | 6 | 4645 | 11739 | 297 | 16087 | -26.5 |
+| 1024 | 7 | 3914 | 12470 | 2545 | 13839 | -8.4 |
+| 1024 | 8 | 4165 | 12219 | 276 | 16108 | -23.7 |
+| 1024 | 9 | 4283 | 12101 | 2329 | 14055 | -11.9 |
+
+Reported median caller ownership is 49.0% for callback versus
+1.8% for direct at 128 rounds, a paired median change of -46.6
+percentage points; at 1024 rounds it is 23.9% versus 10.3%,
+paired median change -16.7 percentage points. All 18 instrumented
+pairs shift work away from the caller with direct tickets. The
+large shift for work=128 is consistent with its three independent
+timed repeats showing a direct-ticket slowdown
+(+855.7/+905.2/+1073.3 ns/fork), but causality is **not** proven:
+the instrumented race differs from the timed race, and worker
+handoff, scheduler contention and system conditions remain
+entangled. The 1024-round timings varied substantially and one
+repeat favored direct, despite the ownership shift.
+
+**Decision:** conservatively restore the callback representation
+as the default for `TaskGroup::fork()`, without changing the
+ticket-based queue, its exact-once semantics, `TaskHandle::wait()`,
+the single inline group joiner, or the scheduler. Keep the explicit
+direct-ticket `TaskHandle` constructor, the `handle-compare`
+and `ownership` diagnostic modes, and a regression test for the
+explicit direct-ticket path. This preserves an easy reversible
+performance experiment while avoiding the repeatable one-worker
+regression for the default path under the tested workload.
+
+This is **not** a claim that the callback representation is faster
+for all workloads: work=1 and the 0/4-worker comparisons often
+favored direct. The rollback is a conservative choice given the
+currently observed one-worker losses and a still-missing realistic
+BDD recursive workload. As of this edit, post-rollback local
+performance measurements and the new CI results remain pending.
+Re-run the full `micro` matrix and recursive cutoff comparison
+before considering the default performance decision final.
