@@ -1,6 +1,7 @@
 #include "ariadne-threading.hpp"
 #include "ariadne-testing.hpp"
 #include <atomic>
+#include <barrier>
 #include <cstddef>
 #include <chrono>
 #include <thread>
@@ -163,6 +164,46 @@ class TestAdvanced : public Ariadne::Testing::ContextFixture {
         }
     }
 
+    void test_graph_empty_invalid_options_and_dependency() {
+        ThreadPool pool(2);
+        TaskGraph empty;
+        empty.run(pool);
+        ARIADNE_TESTING_EXPECT_EQUAL(empty.size(),size_t{0});
+        ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
+
+        TaskGraph one;
+        std::atomic<unsigned> calls{0u};
+        auto task=one.add_task([&] { ++calls; });
+        // Both endpoints are checked: an invalid predecessor must be
+        // rejected even when the successor is valid.
+        ARIADNE_TESTING_EXPECT_EXCEPTION(one.add_dependency(99u,task));
+        ARIADNE_TESTING_EXPECT_EXCEPTION(
+            one.run(pool,ParallelOptions{0u,2u}));
+        ARIADNE_TESTING_EXPECT_EQUAL(calls.load(),0u);
+        one.run(pool);
+        ARIADNE_TESTING_EXPECT_EQUAL(calls.load(),1u);
+        ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
+    }
+
+    void test_graph_concurrent_exceptions_join_every_action() {
+        ThreadPool pool(2);
+        TaskGraph graph;
+        std::barrier rendezvous(2);
+        std::atomic<unsigned> started{0u};
+        // Both roots must start before either throws, guaranteeing that
+        // the second error reaches the already-failed graph state.
+        for(unsigned i=0u;i<2u;++i)
+            graph.add_task([&] {
+                ++started;
+                rendezvous.arrive_and_wait();
+                throw std::runtime_error("independent graph task failure");
+            });
+        ARIADNE_TESTING_EXPECT_EXCEPTION(
+            graph.run(pool,ParallelOptions{1u,2u}));
+        ARIADNE_TESTING_EXPECT_EQUAL(started.load(),2u);
+        ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
+    }
+
     void test_graph_cycle_invalid_and_exception() {
         ThreadPool pool(2);
         TaskGraph graph;
@@ -191,6 +232,8 @@ int main(int argc,char** argv) {
     ARIADNE_TESTING_ADD_TEST(TestAdvanced,test_first_result_external_stop_and_exception);
     ARIADNE_TESTING_ADD_TEST(TestAdvanced,test_graph_dependencies_and_reuse);
     ARIADNE_TESTING_ADD_TEST(TestAdvanced,test_graph_cycle_invalid_and_exception);
+    ARIADNE_TESTING_ADD_TEST(TestAdvanced,test_graph_empty_invalid_options_and_dependency);
+    ARIADNE_TESTING_ADD_TEST(TestAdvanced,test_graph_concurrent_exceptions_join_every_action);
     ARIADNE_TESTING_ADD_TEST(TestAdvanced,test_graph_ready_without_global_wave_barrier);
     ARIADNE_TESTING_ADD_TEST(TestAdvanced,test_graph_stop_before_run_and_resume);
     ARIADNE_TESTING_ADD_TEST(TestAdvanced,test_graph_stop_from_node);
