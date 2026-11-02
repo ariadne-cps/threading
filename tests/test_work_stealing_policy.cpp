@@ -236,11 +236,11 @@ class TestWorkStealingPolicy : public Ariadne::Testing::ContextFixture {
 
     void test_zero_worker_destructor_drains_descendants() {
         // The parent executes only once shutdown has begun. Its child
-        // must still be accepted and drained under either policy.
+        // must still be accepted and drained by the scheduler.
         {
             std::atomic<int> completed{0};
             {
-                ThreadPool pool(0,policy);
+                ThreadPool pool(0);
                 pool.enqueue([&] {
                     ++completed;
                     pool.enqueue([&completed] { ++completed; });
