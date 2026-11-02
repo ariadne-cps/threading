@@ -208,6 +208,22 @@ class TestTaskGroup : public Ariadne::Testing::ContextFixture {
         ARIADNE_TESTING_PROVE(completed.load());
     }
 
+    void test_destructor_suppresses_child_exception() {
+        // An implicit join must execute the pending task, consume the
+        // exception, and let the owning scope exit without terminating.
+        ThreadPool pool(0);
+        std::atomic<unsigned> executed{0u};
+        {
+            TaskGroup group(pool);
+            group.fork([&] {
+                ++executed;
+                throw std::runtime_error("expected implicit join failure");
+            });
+        }
+        ARIADNE_TESTING_EXPECT_EQUAL(executed.load(),1u);
+        ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
+    }
+
     void test_void_handle() {
         ThreadPool pool(0);
         TaskGroup group(pool);
@@ -306,6 +322,7 @@ int main(int argc, char** argv) {
     ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_ticket_acquisition_race);
     ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_ticket_queue_churn);
     ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_destructor_joins);
+    ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_destructor_suppresses_child_exception);
     ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_void_handle);
     ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_explicit_direct_ticket_handle);
     ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_generic_future_helping_is_preserved);
