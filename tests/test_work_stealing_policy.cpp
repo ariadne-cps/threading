@@ -77,6 +77,79 @@ class TestWorkStealingPolicy : public Ariadne::Testing::ContextFixture {
         }
     }
 
+    void test_external_burst_wakes_all_available_workers() {
+        // A burst of independent external tasks must wake enough workers
+        // to make progress in parallel, not just one FIFO consumer.
+        std::atomic<unsigned> started{0u};
+        std::atomic<bool> release{false};
+        ThreadPool pool(4);
+        std::this_thread::sleep_for(5ms);
+        std::vector<std::future<void>> futures;
+        futures.reserve(4);
+        for(unsigned i=0u;i<4u;++i) {
+            futures.push_back(pool.enqueue([&] {
+                started.fetch_add(1u,std::memory_order_release);
+                while(!release.load(std::memory_order_acquire))
+                    std::this_thread::yield();
+            }));
+        }
+        const auto deadline=std::chrono::steady_clock::now()+5s;
+        while(started.load(std::memory_order_acquire)!=4u &&
+              std::chrono::steady_clock::now()<deadline)
+            std::this_thread::yield();
+        const unsigned concurrent=started.load(std::memory_order_acquire);
+        // Always open the gate before checking: failing the assertion must
+        // not strand worker tasks or hang destruction of the pool.
+        release.store(true,std::memory_order_release);
+        for(auto& future:futures) {
+            ARIADNE_TESTING_EXPECT_READY(future,10s);
+            future.get();
+        }
+        ARIADNE_TESTING_EXPECT_EQUAL(concurrent,4u);
+        ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
+    }
+
+    void test_resize_drains_external_burst() {
+        // Shrink waits for zero outstanding activity on an independent epoch.
+        // Its wait must not steal the notification intended for a worker.
+        std::atomic<bool> release{false};
+        std::atomic<unsigned> active{0u};
+        std::atomic<unsigned> finished{0u};
+        ThreadPool pool(2);
+        std::vector<std::future<void>> futures;
+        for(unsigned i=0u;i<2u;++i) {
+            futures.push_back(pool.enqueue([&] {
+                active.fetch_add(1u,std::memory_order_release);
+                while(!release.load(std::memory_order_acquire))
+                    std::this_thread::yield();
+                finished.fetch_add(1u,std::memory_order_relaxed);
+            }));
+        }
+        const auto deadline=std::chrono::steady_clock::now()+5s;
+        while(active.load(std::memory_order_acquire)!=2u &&
+              std::chrono::steady_clock::now()<deadline)
+            std::this_thread::yield();
+        const unsigned workers_started=active.load(std::memory_order_acquire);
+        for(unsigned i=0u;i<48u;++i)
+            futures.push_back(pool.enqueue([&] {
+                finished.fetch_add(1u,std::memory_order_relaxed);
+            }));
+        auto shrink=std::async(std::launch::async,[&pool] {
+            pool.set_num_threads(1);
+        });
+        release.store(true,std::memory_order_release);
+        ARIADNE_TESTING_EXPECT_READY(shrink,10s);
+        shrink.get();
+        for(auto& future:futures) {
+            ARIADNE_TESTING_EXPECT_READY(future,10s);
+            future.get();
+        }
+        ARIADNE_TESTING_EXPECT_EQUAL(workers_started,2u);
+        ARIADNE_TESTING_EXPECT_EQUAL(finished.load(),50u);
+        ARIADNE_TESTING_EXPECT_EQUAL(pool.num_threads(),size_t{1});
+        ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
+    }
+
     void test_global_submission_not_starved_by_local_descendants() {
         // Only one worker can run: it fills its own LIFO with descendants.
         // An external FIFO submission must be chosen before all descendants
@@ -275,6 +348,8 @@ int main(int argc,char** argv) {
     ARIADNE_TESTING_ADD_TEST(TestWorkStealingPolicy,test_global_submission_not_starved_by_local_descendants);
     ARIADNE_TESTING_ADD_TEST(TestWorkStealingPolicy,test_concurrent_submission_and_exact_once);
     ARIADNE_TESTING_ADD_TEST(TestWorkStealingPolicy,test_idle_worker_wake_bursts);
+    ARIADNE_TESTING_ADD_TEST(TestWorkStealingPolicy,test_external_burst_wakes_all_available_workers);
+    ARIADNE_TESTING_ADD_TEST(TestWorkStealingPolicy,test_resize_drains_external_burst);
     ARIADNE_TESTING_ADD_TEST(TestWorkStealingPolicy,test_worker_executes_external_submission);
     ARIADNE_TESTING_ADD_TEST(TestWorkStealingPolicy,test_recursive_fork_join_single_worker);
     ARIADNE_TESTING_ADD_TEST(TestWorkStealingPolicy,test_multiple_forks_preserve_results);

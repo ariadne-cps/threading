@@ -278,3 +278,44 @@ Record each accepted or rejected experiment with its own before/after
 measurements, CI status, semantic regressions if any, and resulting
 decision. No performance optimization is considered completed by this
 baseline documentation update.
+
+## External injection wake-one candidate (2026-11-02)
+
+**Status: implemented as a candidate; runtime and performance verification
+pending on this commit.** This follows the 0/1/4-worker, work=1/128/1024
+microbenchmark baseline above. Do not report any speedup until a comparable
+post-change measurement is available.
+
+Implementation:
+- Global injection (external producer, or worker without an active local
+  queue) now calls `_epoch.notify_one()` per published task, instead of
+  waking every worker. Locally queued descendants continue using
+  `_epoch.notify_all()` so idle workers can steal them. Each publication
+  still increments the monotonic worker epoch before notifying.
+- **Correctness dependency:** worker wakeups and administrative shrinking
+  previously shared `_epoch`. With wake-one, a shrinking thread could
+  consume the notification intended for a sleeping worker while waiting
+  for outstanding activity, potentially leaving queued tasks stalled.
+  A separate monotonic `_drain_epoch` now notifies shrink waiters only
+  when outstanding activity reaches zero. Worker epoch broadcasts remain
+  for pool resizing, shutdown and zero-activity transitions. This avoids
+  an ABA hazard that a simple wait on the outstanding-activity count
+  could introduce if it returns to the same nonzero value.
+- Regression cases check burst parallelism across four idle workers
+  and draining of queued external submissions during a reduction from
+  two workers to one, retaining the existing exact-once, fairness,
+  nested-helping, zero-worker and cancellation-free shutdown tests.
+
+Potential benefit: reduce unnecessary wakeups and worker contention
+for externally submitted fine-grained tasks. Potential cost: a single
+external publication wakes only one worker, while fast bursts may take
+time to distribute across all workers; mixed local/global workloads
+may still cause contention. Neither outcome is established by CI.
+
+**Verification record (to be filled only from actual results):**
+- Build, platform tests, ASan/UBSan and TSan: pending.
+- Post-change `micro` matrix, all nine combinations, same machine:
+  pending.
+- External burst throughput and `recursive --cutoff-sweep`: pending.
+- Decision to retain/revert optimization based on measured benefit:
+  pending. A green CI is a safety prerequisite, not a performance result.

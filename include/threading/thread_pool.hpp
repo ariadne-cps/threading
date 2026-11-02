@@ -143,7 +143,8 @@ class ThreadPool {
     // tasks, including reservations that are not yet in a queue.
     static constexpr size_t stopping_bit=size_t{1} << (sizeof(size_t)*8u-1u);
     std::atomic<size_t> _activity{0};
-    std::atomic<size_t> _epoch{0}; // Atomic wait/notify wake-up generation.
+    std::atomic<size_t> _epoch{0}; // Worker wake-up generation.
+    std::atomic<size_t> _drain_epoch{0}; // Independent zero-activity resize wake-up.
 };
 
 template<class F,class... AS>
