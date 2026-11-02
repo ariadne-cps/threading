@@ -80,6 +80,39 @@ class TestCoordination : public Ariadne::Testing::ContextFixture {
         ARIADNE_TESTING_EXPECT_EQUAL(budget.available(),size_t{2});
     }
 
+    void test_budget_permit_move_assignment() {
+        // Replacing an owned permit releases its previous slot exactly once.
+        ConcurrencyBudget budget(2);
+        ARIADNE_TESTING_EXPECT_EQUAL(budget.capacity(),size_t{2});
+        auto first=budget.try_acquire();
+        auto second=budget.try_acquire();
+        ARIADNE_TESTING_PROVE(bool(first) && bool(second));
+        ARIADNE_TESTING_EXPECT_EQUAL(budget.available(),size_t{0});
+
+        auto held=std::move(*first);
+        ARIADNE_TESTING_PROVE(!static_cast<bool>(*first));
+        ARIADNE_TESTING_PROVE(static_cast<bool>(held));
+        ARIADNE_TESTING_EXPECT_EQUAL(budget.available(),size_t{0});
+
+        held=std::move(*second);
+        ARIADNE_TESTING_PROVE(!static_cast<bool>(*second));
+        ARIADNE_TESTING_PROVE(static_cast<bool>(held));
+        ARIADNE_TESTING_EXPECT_EQUAL(budget.available(),size_t{1});
+
+        // Self-move must preserve ownership and capacity, not release it.
+        auto* same=&held;
+        held=std::move(*same);
+        ARIADNE_TESTING_PROVE(static_cast<bool>(held));
+        ARIADNE_TESTING_EXPECT_EQUAL(budget.available(),size_t{1});
+
+        // Move-assigning an empty source releases the last held permit.
+        held=std::move(*first);
+        ARIADNE_TESTING_PROVE(!static_cast<bool>(held));
+        ARIADNE_TESTING_EXPECT_EQUAL(budget.available(),size_t{2});
+        held.release(); // Releasing an empty permit is idempotent.
+        ARIADNE_TESTING_EXPECT_EQUAL(budget.available(),size_t{2});
+    }
+
     void test_budget_stop() {
         ConcurrencyBudget budget(1);
         auto first=budget.acquire();
@@ -104,6 +137,7 @@ int main(int argc,char** argv) {
     ARIADNE_TESTING_ADD_TEST(TestCoordination,test_channel_stop);
     ARIADNE_TESTING_ADD_TEST(TestCoordination,test_channel_worker_exchange);
     ARIADNE_TESTING_ADD_TEST(TestCoordination,test_budget_raii);
+    ARIADNE_TESTING_ADD_TEST(TestCoordination,test_budget_permit_move_assignment);
     ARIADNE_TESTING_ADD_TEST(TestCoordination,test_budget_stop);
     ARIADNE_TESTING_ADD_TEST(TestCoordination,test_invalid_capacity);
     return ARIADNE_TESTING_RUN_TESTS_WITH_ARGS(argc,argv);
