@@ -12,6 +12,7 @@ set(UNIT_TESTS
     test_thread_pool
     test_thread_manager
     test_workload_advancement
+    test_observation
     test_workload
     test_task_group
     test_work_stealing_policy

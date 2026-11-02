@@ -42,6 +42,7 @@
 #include "threading/using.hpp"
 #include "threading/workload.hpp"
 #include "threading/workload_advancement.hpp"
+#include "threading/workload_observation.hpp"
 #include "threading/workload_interface.hpp"
 
 #endif // ARIADNE_THREADING_UMBRELLA_HPP

@@ -197,6 +197,8 @@ class WorkloadBase : public WorkloadInterface<E,AS...>, protected WorkloadCore {
 
     size_t size() const override { return this->_size(); }
 
+    WorkloadSnapshot snapshot() const override { return this->_advancement.snapshot(); }
+
     WorkloadInterface<E,AS...>& append(E const& e) override {
         auto task = std::bind(std::forward<TaskFunctionType const>(_task_func), std::forward<E const&>(e));
         auto progress_acknowledge = std::bind(std::forward<ProgressAcknowledgeFunctionType const>(_progress_acknowledge_func),

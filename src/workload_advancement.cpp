@@ -31,6 +31,11 @@ using std::lock_guard;
 
 WorkloadAdvancement::WorkloadAdvancement(size_t initial) : _num_waiting(initial), _num_processing(0), _num_completed(0) { }
 
+WorkloadSnapshot WorkloadAdvancement::snapshot() const {
+    lock_guard<mutex> lock(_mux);
+    return {_num_waiting,_num_processing,_num_completed};
+}
+
 size_t WorkloadAdvancement::waiting() const {
     lock_guard<mutex> lock(_mux);
     return _num_waiting;

@@ -32,6 +32,7 @@
 #include <functional>
 #include "utility/container.hpp"
 #include "threading/using.hpp"
+#include "threading/workload_observation.hpp"
 
 namespace Ariadne {
 
@@ -44,7 +45,7 @@ using Ariadne::List;
 //!          The workload handles the non-concurrent case separately, in order to unroll the tasks breadth-first: if
 //!          tasks were instead enqueued to the ThreadManager, a depth-first execution would be performed.
 template<class E, class... AS>
-class WorkloadInterface {
+class WorkloadInterface : public WorkloadObservable {
 public:
 
     //! \brief Process the given elements until completion

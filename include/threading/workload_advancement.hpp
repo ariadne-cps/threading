@@ -31,15 +31,18 @@
 
 #include <algorithm>
 #include <mutex>
+#include "threading/workload_observation.hpp"
 
 namespace Ariadne {
 
 using std::mutex;
 
 //! \brief Synchronised class to manage the status of multiple elements to process
-class WorkloadAdvancement {
+class WorkloadAdvancement : public WorkloadObservable {
   public:
     WorkloadAdvancement(size_t initial = 0);
+
+    WorkloadSnapshot snapshot() const override;
 
     //! \brief The elements waiting to be processed
     size_t waiting() const;

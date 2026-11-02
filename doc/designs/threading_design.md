@@ -1239,3 +1239,26 @@ an exhausted budget, normal completion and exception cleanup.
 Benchmarking is still required to determine appropriate budget
 capacities for BDD, CDCL and DNN; shared permits are intentionally
 not imposed implicitly on existing applications.
+
+
+## Read-only workload observability contract (2026-11-02)
+
+Added `WorkloadSnapshot` (waiting/processing/completed counts, derived
+total/completion_rate/has_finished) and the logging-independent
+`WorkloadObservable::snapshot() const` interface. The snapshot is copied
+under the counter's existing mutex to guarantee internally coherent
+counts, unlike reading three independent getters between updates.
+
+`WorkloadAdvancement` and the existing `WorkloadInterface` hierarchy
+implement the contract. `StaticWorkload` and `DynamicWorkload` inherit
+the functionality without constructor, append, process, progress indicator
+or Logger changes. The new read-only API can be consumed by future BDD,
+CDCL and DNN monitoring without installing Logging in low-level task APIs.
+A completed task means it ceased processing, not that it succeeded, and
+a dynamic workload may grow its total after any snapshot.
+
+Tests cover snapshot transitions, concurrent read consistency and
+compatibility with static/dynamic workloads, including dynamically
+spawned tasks. No callback subscription is included: semantics of
+callback failures, reentrancy and notification ordering require a
+separate design before implementation.
