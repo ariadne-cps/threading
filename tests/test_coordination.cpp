@@ -41,6 +41,25 @@ class TestCoordination : public Ariadne::Testing::ContextFixture {
         ARIADNE_TESTING_PROVE(!q.try_receive());
     }
 
+    void test_closed_channel_rejects_blocking_send() {
+        BoundedChannel<int> channel(1);
+        ARIADNE_TESTING_PROVE(channel.send(17));
+        ARIADNE_TESTING_PROVE(channel.close());
+
+        // A closed, full channel must reject the blocking send API without
+        // discarding or overwriting the previously buffered item.
+        ARIADNE_TESTING_PROVE(!channel.send(23));
+        ARIADNE_TESTING_EXPECT_EQUAL(channel.size(),size_t{1});
+        auto buffered=channel.receive();
+        ARIADNE_TESTING_PROVE(bool(buffered));
+        ARIADNE_TESTING_EXPECT_EQUAL(*buffered,17);
+
+        // Draining the channel does not reopen it, even with free capacity.
+        ARIADNE_TESTING_PROVE(!channel.send(29));
+        ARIADNE_TESTING_EXPECT_EQUAL(channel.size(),size_t{0});
+        ARIADNE_TESTING_PROVE(!channel.receive());
+    }
+
     void test_channel_worker_exchange() {
         BoundedChannel<unsigned> channel(8);
         ThreadPool pool(2);
@@ -135,6 +154,7 @@ int main(int argc,char** argv) {
     ARIADNE_TESTING_SUITE("coordination");
     ARIADNE_TESTING_ADD_TEST(TestCoordination,test_fifo_close_and_move);
     ARIADNE_TESTING_ADD_TEST(TestCoordination,test_channel_stop);
+    ARIADNE_TESTING_ADD_TEST(TestCoordination,test_closed_channel_rejects_blocking_send);
     ARIADNE_TESTING_ADD_TEST(TestCoordination,test_channel_worker_exchange);
     ARIADNE_TESTING_ADD_TEST(TestCoordination,test_budget_raii);
     ARIADNE_TESTING_ADD_TEST(TestCoordination,test_budget_permit_move_assignment);
