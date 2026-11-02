@@ -18,12 +18,7 @@
 #ifndef THREADING_TASK_GRAPH_HPP
 #define THREADING_TASK_GRAPH_HPP
 
-#include <algorithm>
 #include <cstddef>
-#include <condition_variable>
-#include <deque>
-#include <exception>
-#include <mutex>
 #include <functional>
 #include <stdexcept>
 #include <stop_token>
@@ -34,19 +29,23 @@
 
 namespace Ariadne {
 
-//! Static CPU DAG of void tasks, e.g. independent DNN operations.
-//! The owner constructs the graph and runs it; concurrent mutation,
-//! destruction, or repeated runs are not supported. Each node executes
-//! at most once per run. The graph may be reused after run() returns.
-//! Each dependency is an ordering edge, not a data transport channel.
-//! Cycle validation completes before any task is invoked.
-//! Ready nodes may run as soon as their own predecessors complete;
-//! unrelated slow nodes impose no global level barrier.
-//! No order is guaranteed between independent nodes.
+/** @brief Static dependency-directed execution graph for CPU tasks.
+ *  @details Dependencies enforce ordering, not data movement. Nodes become
+ *  runnable as their prerequisites complete; independent nodes do not wait
+ *  for a global topological-level barrier. Build and run on one owning thread:
+ *  concurrent mutation, destruction, or invocation of run() is unsupported.
+ *  The graph can be reused after run() returns.
+ */
 class TaskGraph {
   public:
     using TaskId=std::size_t;
 
+    /** @brief Add an action and return its stable node identifier.
+     *  @tparam F Callable convertible to std::function<void()>.
+     *  @param fn Action to execute; must remain valid through run().
+     *  @throws std::invalid_argument if the action is empty.
+     *  @note Do not mutate the graph while it is executing.
+     */
     template<class F>
     TaskId add_task(F&& fn) {
         const auto id=_nodes.size();
@@ -56,117 +55,31 @@ class TaskGraph {
         return id;
     }
 
-    void add_dependency(TaskId prerequisite,TaskId successor) {
-        if(prerequisite>=_nodes.size() || successor>=_nodes.size())
-            throw std::out_of_range("TaskGraph task ID out of range");
-        if(prerequisite==successor)
-            throw std::invalid_argument("TaskGraph self-dependency");
-        auto& dependencies=_nodes[successor].dependencies;
-        if(std::find(dependencies.begin(),dependencies.end(),prerequisite)
-                !=dependencies.end())
-            throw std::invalid_argument("TaskGraph duplicate dependency");
-        dependencies.push_back(prerequisite);
-    }
+    /** @brief Require @p prerequisite to finish before @p successor runs.
+     *  @throws std::out_of_range for an unknown node identifier.
+     *  @throws std::invalid_argument for self or duplicate edges.
+     *  @note Cycles are detected by run() before any action is invoked.
+     */
+    void add_dependency(TaskId prerequisite,TaskId successor);
 
+    /** @brief Number of registered graph nodes. */
     std::size_t size() const noexcept { return _nodes.size(); }
 
-    //! Validate cycles before running; workers then consume a shared ready
-    //! queue. When any node throws, active nodes finish, but no more nodes
-    //! are dispatched. The first observed exception is propagated.
-    //! The caller is one execution lane. An optional stop token prevents
-    //! new dispatches after cancellation, without forcibly interrupting
-    //! any action already running. The run returns after active actions
-    //! finish, and can be called again with a fresh token.
+    /** @brief Execute all ready nodes on the scheduler and calling thread.
+     *  @param scheduler Scheduler that must outlive this call.
+     *  @param options Grain validation, lane limit, rounding mode and optional
+     *         shared nonblocking spawn budget.
+     *  @param stop Optional cooperative cancellation. Already-started actions
+     *         finish; no additional actions are dispatched after stop.
+     *  @throws std::logic_error if the graph contains a cycle.
+     *  @throws std::invalid_argument if options.grain_size is zero.
+     *  @throws Any exception from an action, after all active actions finish.
+     *  @note A stop request returns normally after joining active work; it
+     *        does not report that every node executed. No execution order is
+     *        guaranteed among independently ready nodes.
+     */
     void run(ThreadPool& scheduler,ParallelOptions options={1u,0u},
-             std::stop_token stop={}) {
-        if(options.grain_size==0u)
-            throw std::invalid_argument("TaskGraph grain_size must be positive");
-
-        const auto count=_nodes.size();
-        if(count==0u)return;
-        std::vector<std::vector<TaskId>> successors(count);
-        std::vector<std::size_t> initial(count,0u);
-        for(TaskId id=0u;id<count;++id) {
-            for(auto dependency:_nodes[id].dependencies)
-                successors[dependency].push_back(id);
-            initial[id]=_nodes[id].dependencies.size();
-        }
-
-        // Kahn validation is complete before invoking application callbacks.
-        auto validation=initial;
-        std::deque<TaskId> visit;
-        for(TaskId i=0u;i<count;++i)
-            if(validation[i]==0u)visit.push_back(i);
-        std::size_t visited=0u;
-        while(!visit.empty()) {
-            const auto id=visit.front();
-            visit.pop_front();
-            ++visited;
-            for(auto successor:successors[id])
-                if(--validation[successor]==0u)
-                    visit.push_back(successor);
-        }
-        if(visited!=count)
-            throw std::logic_error("TaskGraph contains a dependency cycle");
-
-        // The graph's ready queue and dependency counters are protected
-        // by one lock; all node writes happen-before dependent node reads.
-        auto remaining=std::move(initial);
-        std::deque<TaskId> ready;
-        for(TaskId id=0u;id<count;++id)
-            if(remaining[id]==0u)ready.push_back(id);
-        std::mutex mutex;
-        std::condition_variable changed;
-        std::size_t completed=0u;
-        bool failed=false;
-        std::exception_ptr failure;
-
-        // Locking the same mutex as the wait predicate prevents a stop
-        // notification from being lost between predicate check and wait.
-        std::stop_callback notify_on_stop(stop,[&] {
-            std::lock_guard lock(mutex);
-            changed.notify_all();
-        });
-        parallel_detail::LaneReservation reservation(scheduler,count,options);
-        const auto lanes=reservation.lanes();
-        auto execute=[&](std::size_t) {
-            for(;;) {
-                TaskId id;
-                {
-                    std::unique_lock lock(mutex);
-                    changed.wait(lock,[&] {
-                        return failed || stop.stop_requested() ||
-                               completed==count || !ready.empty();
-                    });
-                    if(failed || stop.stop_requested() || completed==count)return;
-                    id=ready.front();
-                    ready.pop_front();
-                }
-                std::exception_ptr error;
-                try {
-                    ScopedRoundingMode rounding(options.rounding_mode);
-                    _nodes[id].action();
-                } catch (...) {
-                    error=std::current_exception();
-                }
-                {
-                    std::lock_guard lock(mutex);
-                    ++completed;
-                    if(error && !failed) {
-                        failed=true;
-                        failure=error;
-                    }
-                    if(!failed && !stop.stop_requested())
-                        for(auto successor:successors[id])
-                            if(--remaining[successor]==0u)
-                                ready.push_back(successor);
-                }
-                changed.notify_all();
-            }
-        };
-        parallel_detail::execute_lanes(scheduler,lanes,execute);
-        if(failure)std::rethrow_exception(failure);
-    }
+             std::stop_token stop={});
 
   private:
     struct Node {

@@ -1262,3 +1262,25 @@ compatibility with static/dynamic workloads, including dynamically
 spawned tasks. No callback subscription is included: semantics of
 callback failures, reentrancy and notification ordering require a
 separate design before implementation.
+
+
+## Non-template implementation extraction and public Doxygen (2026-11-02)
+
+Moved non-template implementations from public headers into compiled objects:
+`TaskGraph::run/add_dependency` in `src/task_graph.cpp`, `ConcurrencyBudget`
+permit acquisition/RAII release in `src/concurrency_budget.cpp`,
+`ScopedRoundingMode` construction/restoration in
+`src/floating_point_environment.cpp`, and `WorkloadCore`'s queue,
+progress, exception and Logging paths in `src/workload.cpp`.
+The corresponding sources are registered in `THREADING_SRC` for the
+installed `ariadne-threading` library. Templated element binding
+(`StaticWorkload`, `DynamicWorkload`), task submission (`TaskGroup`),
+and generic parallel algorithms remain in headers.
+
+The public headers now document ownership/lifetime, optional stop behavior,
+exception paths and budget nonblocking semantics through Doxygen comments.
+The work deliberately avoids altering ordering, execution algorithms,
+Logging scopes or interfaces used by `evolution` and `smt`.
+Moving formerly-inline non-template bodies into linked symbols changes
+binary linkage requirements, so dependent projects must link and rebuild
+against the updated library; source-level behavior is intended unchanged.

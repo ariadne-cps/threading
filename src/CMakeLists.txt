@@ -6,5 +6,9 @@ add_library(${LIBRARY_NAME} OBJECT
         buffered_thread.cpp
         thread_pool.cpp
         workload_advancement.cpp
+        workload.cpp
+        task_graph.cpp
+        concurrency_budget.cpp
+        floating_point_environment.cpp
         thread_manager.cpp
         )

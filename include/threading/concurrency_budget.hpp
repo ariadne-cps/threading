@@ -18,93 +18,60 @@
 #include <cstddef>
 #include <mutex>
 #include <optional>
-#include <stdexcept>
 #include <stop_token>
-#include <utility>
 
 namespace Ariadne {
 
-//! Shared admission permits; NOT a reservation of hardware cores.
-//! Use try_acquire() from pool tasks when the releaser could be queued
-//! behind the waiter: blocking worker threads can deadlock.
-//! The budget must outlive all issued Permit objects.
+/** @brief Thread-safe capacity permits for shared workload admission.
+ *  @details This is not CPU affinity or reservation of physical cores.
+ *  Permits have RAII ownership and must not outlive their budget.
+ */
 class ConcurrencyBudget {
   public:
+    /** @brief Move-only RAII reservation returned by acquire/try_acquire.
+     *  @note The parent budget must outlive every outstanding permit.
+     */
     class Permit {
         friend class ConcurrencyBudget;
       public:
         Permit(Permit const&)=delete;
         Permit& operator=(Permit const&)=delete;
-
-        Permit(Permit&& other) noexcept
-            : _budget(std::exchange(other._budget,nullptr)) { }
-
-        Permit& operator=(Permit&& other) noexcept {
-            if(this!=&other) {
-                release();
-                _budget=std::exchange(other._budget,nullptr);
-            }
-            return *this;
-        }
-
-        ~Permit() noexcept { release(); }
-
-        void release() noexcept {
-            if(auto* budget=std::exchange(_budget,nullptr))
-                budget->_release();
-        }
-
+        Permit(Permit&& other) noexcept;
+        Permit& operator=(Permit&& other) noexcept;
+        ~Permit() noexcept;
+        /** @brief Return capacity exactly once; safe on moved-from permits. */
+        void release() noexcept;
         explicit operator bool() const noexcept { return _budget!=nullptr; }
-
       private:
-        explicit Permit(ConcurrencyBudget* budget) noexcept
-            : _budget(budget) { }
+        explicit Permit(ConcurrencyBudget* budget) noexcept;
         ConcurrencyBudget* _budget;
     };
 
-    explicit ConcurrencyBudget(std::size_t capacity)
-        : _capacity(capacity),_available(capacity) {
-        if(capacity==0u)
-            throw std::invalid_argument("ConcurrencyBudget capacity must be positive");
-    }
-
+    /** @brief Create a nonzero-capacity admission budget.
+     *  @throws std::invalid_argument if capacity is zero.
+     */
+    explicit ConcurrencyBudget(std::size_t capacity);
     ConcurrencyBudget(ConcurrencyBudget const&)=delete;
     ConcurrencyBudget& operator=(ConcurrencyBudget const&)=delete;
     ConcurrencyBudget(ConcurrencyBudget&&)=delete;
     ConcurrencyBudget& operator=(ConcurrencyBudget&&)=delete;
 
+    /** @brief Maximum number of simultaneous permits. */
     std::size_t capacity() const noexcept { return _capacity; }
-
-    std::size_t available() const {
-        std::lock_guard lock(_mutex);
-        return _available;
-    }
-
-    std::optional<Permit> try_acquire() {
-        std::lock_guard lock(_mutex);
-        if(_available==0u)return std::nullopt;
-        --_available;
-        return std::optional<Permit>(Permit(this));
-    }
-
-    //! Wait until a permit is available or stop is requested.
-    //! Prefer try_acquire() from tasks running on a bounded pool.
-    std::optional<Permit> acquire(std::stop_token stop={}) {
-        std::unique_lock lock(_mutex);
-        _changed.wait(lock,stop,[this] { return _available!=0u; });
-        if(stop.stop_requested())return std::nullopt;
-        --_available;
-        return std::optional<Permit>(Permit(this));
-    }
+    /** @brief Available permits at the instant of the synchronized read. */
+    std::size_t available() const;
+    /** @brief Acquire without blocking; returns empty when exhausted. */
+    std::optional<Permit> try_acquire();
+    /** @brief Wait for admission or cooperative cancellation.
+     *  @param stop Cancellation token; a requested stop returns empty.
+     *  @warning Waiting inside a bounded thread pool can deadlock when
+     *           the permit releaser is queued behind the waiting task.
+     *           Prefer try_acquire() for nested parallelism.
+     */
+    std::optional<Permit> acquire(std::stop_token stop={});
 
   private:
-    void _release() noexcept {
-        {
-            std::lock_guard lock(_mutex);
-            ++_available;
-        }
-        _changed.notify_one();
-    }
+    void _release() noexcept;
 
     const std::size_t _capacity;
     mutable std::mutex _mutex;

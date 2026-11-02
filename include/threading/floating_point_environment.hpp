@@ -35,22 +35,19 @@ namespace Ariadne {
 //! No rounding mode is changed when mode is std::nullopt.
 class ScopedRoundingMode {
   public:
-    explicit ScopedRoundingMode(std::optional<int> mode) {
-        if(!mode)return;
-        _previous=std::fegetround();
-        if(_previous==-1)
-            throw std::runtime_error("Cannot query current FP rounding mode");
-        if(std::fesetround(*mode)!=0)
-            throw std::invalid_argument("Unsupported FP rounding mode");
-        _active=true;
-    }
+    /** @brief Set the calling thread's rounding mode for this scope.
+     *  @param mode A supported FE_* rounding constant, or std::nullopt
+     *         to leave the floating-point environment unchanged.
+     *  @throws std::runtime_error if the existing rounding mode cannot be read.
+     *  @throws std::invalid_argument if the requested mode is unsupported.
+     */
+    explicit ScopedRoundingMode(std::optional<int> mode);
 
     ScopedRoundingMode(ScopedRoundingMode const&)=delete;
     ScopedRoundingMode& operator=(ScopedRoundingMode const&)=delete;
 
-    ~ScopedRoundingMode() noexcept {
-        if(_active)(void)std::fesetround(_previous);
-    }
+    /** @brief Restore the original mode on the same thread. */
+    ~ScopedRoundingMode() noexcept;
 
   private:
     int _previous=0;
