@@ -775,3 +775,81 @@ BDD recursive workload. As of this edit, post-rollback local
 performance measurements and the new CI results remain pending.
 Re-run the full `micro` matrix and recursive cutoff comparison
 before considering the default performance decision final.
+
+
+## Recursive cutoff sweep after restoring callback acquisition (2026-11-02)
+
+The user ran the Release recursive cutoff sweep after the
+`TaskGroup::fork()` default acquisition rollback (`d8b0710`):
+`--mode recursive --cutoff-sweep --depth 9 --work 128 --samples 9`,
+with 0, 1, and 4 dedicated worker threads. The workload has
+512 leaf evaluations in every case; only how deeply the
+recursion forks changes. Each sample uses a fresh warmed pool.
+Pool startup/teardown is not timed. These are *post-rollback*
+measurements only, not a historical before/after A/B benchmark.
+
+| Workers | Cutoff | Forks | Median ms | Min ms | Max ms | MAD ms |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | 0 | 511 | 0.790 | 0.688 | 0.886 | 0.009 |
+| 0 | 2 | 127 | 0.398 | 0.377 | 0.409 | 0.002 |
+| 0 | 4 | 31 | 0.303 | 0.267 | 0.305 | 0.000 |
+| 0 | 6 | 7 | 0.253 | 0.211 | 0.263 | 0.001 |
+| 0 | 8 | 1 | 0.208 | 0.194 | 0.208 | 0.000 |
+| 0 | 9 | 0 | 0.193 | 0.193 | 0.194 | 0.000 |
+| 1 | 0 | 511 | 0.310 | 0.298 | 0.473 | 0.010 |
+| 1 | 2 | 127 | 0.157 | 0.151 | 0.161 | 0.001 |
+| 1 | 4 | 31 | 0.128 | 0.120 | 0.136 | 0.003 |
+| 1 | 6 | 7 | 0.132 | 0.124 | 0.138 | 0.006 |
+| 1 | 8 | 1 | 0.135 | 0.132 | 0.157 | 0.000 |
+| 1 | 9 | 0 | 0.226 | 0.226 | 0.226 | 0.000 |
+| 4 | 0 | 511 | 0.430 | 0.346 | 0.482 | 0.025 |
+| 4 | 2 | 127 | 0.164 | 0.144 | 0.190 | 0.016 |
+| 4 | 4 | 31 | 0.082 | 0.070 | 0.122 | 0.005 |
+| 4 | 6 | 7 | 0.075 | 0.066 | 0.093 | 0.009 |
+| 4 | 8 | 1 | 0.109 | 0.107 | 0.119 | 0.002 |
+| 4 | 9 | 0 | 0.202 | 0.201 | 0.202 | 0.000 |
+
+Findings:
+- Zero workers: the no-fork cutoff=9 case is fastest (0.193 ms);
+  creating 511 tasks takes 0.790 ms, about 4.1 times as long.
+- One worker: the observed minimum median is cutoff=4
+  (31 forks, 0.128 ms). Cutoff=6 (7 forks, 0.132 ms) is only
+  0.004 ms slower, comparable to sample MADs, so a precise
+  optimum has not been established.
+- Four workers: the observed minimum median is cutoff=6
+  (7 forks, 0.075 ms). Cutoff=4 (31 forks, 0.082 ms) is
+  0.007 ms slower; the cutoff=6 MAD is 0.009 ms.
+  Relative to 511 forks at cutoff=0 (0.430 ms), cutoff=6
+  is about 5.7 times faster. Relative to no forking on
+  the same four-worker pool (0.202 ms), it is about 2.7
+  times faster. These are ratios of measured medians,
+  not confidence intervals or general BDD speedups.
+- All measured runs pass the benchmark reference checksum.
+  Cutoff=9 performs the same purely sequential computation
+  but its medians differ across the three runs (0.193,
+  0.226, 0.202 ms). Worker availability, system state,
+  ordering and measurement duration can confound
+  cross-configuration comparisons; do not assume a fixed
+  machine-independent sequential baseline.
+- Each scenario finishes in fractions of a millisecond,
+  and only nine samples were collected. Do not infer a
+  robust exact grain threshold from the lowest single median.
+
+**Decision:** retain the callback-based TaskGroup default after
+the one-worker ticket regression; the current recursive results
+demonstrate a strong need for coarse-grained spawning, but do
+not compare callback and direct-ticket defaults on the same
+recursive workload. No scheduler or TaskGroup code change
+is warranted from this sweep alone.
+
+**Next experiment:** repeat the recursive cutoff sweep at
+depth=13 with the same work=128 for 0, 1 and 4 workers, to
+increase the total useful work from 512 to 8192 leaves and
+make sub-millisecond timing noise less dominant. Compare
+the broad cutoff plateau before selecting a BDD cutoff.
+A true ROBDD ITE benchmark is still required: memoization
+and sharded-table contention are absent from this synthetic
+integer recurrence.
+
+CI status verified at rollback `d8b0710`: Ubuntu, macOS,
+Windows, Coverage and Sanitizers all passed.
