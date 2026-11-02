@@ -1284,3 +1284,25 @@ Logging scopes or interfaces used by `evolution` and `smt`.
 Moving formerly-inline non-template bodies into linked symbols changes
 binary linkage requirements, so dependent projects must link and rebuild
 against the updated library; source-level behavior is intended unchanged.
+
+
+## Configurable DNN benchmark task granularity (2026-11-02)
+
+`benchmark_use_cases` now accepts `--batch-grain N` (default 16,
+range 1..4096) for its DNN forward and gradient modes. It groups up
+to N independent batch samples per graph node while retaining one
+hidden -> output -> optional gradient dependency chain per group.
+`--batch-grain 1` restores the previous one-sample-per-stage DAG.
+Non-divisible batch sizes use a smaller last group. Each sample still
+performs the same floating-point operations in the same per-sample
+order; existing full-state bitwise fingerprints and pool-drain checks
+are unchanged. The graph is constructed before timing, as before.
+
+The output now reports `batch_grain` and `graph_nodes` for DNN
+modes, making task-management overhead and chosen granularity visible.
+`--work` remains **CDCL-only**, and DNN lines no longer misleadingly
+print it. The CDCL algorithm and CLI defaults other than DNN granularity
+are unchanged. Benchmark comparison should sweep batch-grain values
+(1, 4, 8, 16, 32, 64, 128) and worker counts (0, 1, 2, 4),
+without assuming speedups before measurement. This is a benchmark-only
+change; no runtime or CI modifications.

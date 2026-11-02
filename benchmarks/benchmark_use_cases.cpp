@@ -44,6 +44,7 @@ struct Options {
     unsigned workers=4u;
     unsigned cases=128u;
     unsigned work=2048u;
+    unsigned batch_grain=16u;
     unsigned samples=7u;
 };
 
@@ -66,7 +67,9 @@ Options parse_options(int argc,char** argv) {
                 << "  --mode cdcl|dnn-forward|dnn-gradient|all\n"
                 << "  --workers N   dedicated pool workers, 0..64 (default 4)\n"
                 << "  --cases N     independent candidates / batch items, 1..4096 (default 128)\n"
-                << "  --work N      CDCL-like integer mixing rounds, 1..100000 (default 2048)\n"
+                << "  --work N      CDCL-only integer mixing rounds, 1..100000 (default 2048)\n"
+                << "  --batch-grain N  DNN batch items per graph group, 1..4096 (default 16)\n"
+                << "                   1 reproduces the original one-item-per-stage DAG\n"
                 << "  --samples N   odd 3..101 (default 7)\n"
                 << "The CDCL case is a portfolio analogue, NOT a satisfiability solver.\n"
                 << "DNN workloads are CPU dense forward/gradient kernels, NOT training a model.\n";
@@ -79,13 +82,14 @@ Options parse_options(int argc,char** argv) {
         else if(option=="--workers")options.workers=parse_positive(value,64u);
         else if(option=="--cases")options.cases=parse_positive(value,4096u);
         else if(option=="--work")options.work=parse_positive(value,100000u);
+        else if(option=="--batch-grain")options.batch_grain=parse_positive(value,4096u);
         else if(option=="--samples")options.samples=parse_positive(value,101u);
         else throw std::invalid_argument("unknown option "+option);
     }
     if(options.mode!="cdcl" && options.mode!="dnn-forward" &&
        options.mode!="dnn-gradient" && options.mode!="all")
         throw std::invalid_argument("invalid benchmark mode");
-    if(options.cases==0u || options.work==0u ||
+    if(options.cases==0u || options.work==0u || options.batch_grain==0u ||
        options.samples<3u || options.samples%2u==0u)
         throw std::invalid_argument("invalid count, work or samples");
     return options;
@@ -139,11 +143,17 @@ double timed(F&& function) {
 }
 
 void print_pair(std::string const& mode,Options const& options,
-                Statistics serial,Statistics parallel) {
+                Statistics serial,Statistics parallel,
+                std::size_t graph_nodes=0u) {
     std::cout << std::fixed << std::setprecision(5)
               << "mode=" << mode << " workers=" << options.workers
-              << " cases=" << options.cases << " samples=" << options.samples
-              << " work=" << options.work << '\n'
+              << " cases=" << options.cases << " samples=" << options.samples;
+    if(mode=="cdcl")
+        std::cout << " work=" << options.work;
+    else
+        std::cout << " batch_grain=" << options.batch_grain
+                  << " graph_nodes=" << graph_nodes;
+    std::cout << '\n'
               << "  sequential median/min/max/MAD ms: "
               << serial.median_ms << '/' << serial.min_ms << '/'
               << serial.max_ms << '/' << serial.mad_ms << '\n'
@@ -301,18 +311,29 @@ void benchmark_dnn(Options const& options,bool gradient) {
         }
     };
 
+    // Each group has a dependency chain hidden -> output -> gradient.
+    // Samples within a group are independent: grouping changes only task
+    // granularity, not the arithmetic order within any individual sample.
+    // In particular, --batch-grain 1 recreates the original task graph.
+    const std::size_t grain=options.batch_grain;
+    const std::size_t groups=1u+(batch-1u)/grain;
     TaskGraph graph;
-    for(std::size_t b=0u;b<batch;++b) {
-        auto hidden=graph.add_task([&,b] {
-            dense_hidden(network,parallel_state,b);
+    for(std::size_t group=0u;group<groups;++group) {
+        const std::size_t begin=group*grain;
+        const std::size_t end=begin+std::min(grain,batch-begin);
+        auto hidden=graph.add_task([&,begin,end] {
+            for(std::size_t b=begin;b<end;++b)
+                dense_hidden(network,parallel_state,b);
         });
-        auto output=graph.add_task([&,b] {
-            dense_output(network,parallel_state,b);
+        auto output=graph.add_task([&,begin,end] {
+            for(std::size_t b=begin;b<end;++b)
+                dense_output(network,parallel_state,b);
         });
         graph.add_dependency(hidden,output);
         if(gradient) {
-            auto backward=graph.add_task([&,b] {
-                dense_gradient(network,parallel_state,b);
+            auto backward=graph.add_task([&,begin,end] {
+                for(std::size_t b=begin;b<end;++b)
+                    dense_gradient(network,parallel_state,b);
             });
             graph.add_dependency(output,backward);
         }
@@ -339,7 +360,7 @@ void benchmark_dnn(Options const& options,bool gradient) {
             throw std::runtime_error("DNN sample checksum or queue mismatch");
     }
     print_pair(gradient?"dnn-gradient":"dnn-forward",
-               options,stats(seq_times),stats(par_times));
+               options,stats(seq_times),stats(par_times),graph.size());
 }
 
 } // namespace
