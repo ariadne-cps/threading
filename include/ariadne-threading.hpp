@@ -24,6 +24,8 @@
 #ifndef ARIADNE_THREADING_UMBRELLA_HPP
 #define ARIADNE_THREADING_UMBRELLA_HPP
 
+#include "threading/bounded_channel.hpp"
+#include "threading/concurrency_budget.hpp"
 #include "threading/buffer.hpp"
 #include "threading/parallel.hpp"
 #include "threading/stop_task_group.hpp"

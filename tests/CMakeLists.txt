@@ -17,6 +17,7 @@ set(UNIT_TESTS
     test_work_stealing_policy
     test_umbrella
     test_parallel
+    test_coordination
 )
 
 foreach(TEST ${UNIT_TESTS})

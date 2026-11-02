@@ -944,3 +944,34 @@ change only; it does not constrain the DL algorithms, add neural
 network functionality, or modify scheduler behavior. The broader
 term *deep learning* may still be used descriptively where useful,
 but **DNN** is the reference use-case label.
+
+
+## CDCL and DNN coordination primitives (2026-11-02)
+
+Added two generic C++20 primitives, independent of application logic:
+- `BoundedChannel<T>`: mutex-protected bounded FIFO with nonblocking
+  `try_send`/`try_receive`, blocking `send`/`receive` accepting
+  `std::stop_token`, and idempotent `close`. A closed channel retains
+  its buffered messages for draining; cancellation does not consume
+  buffered items. Move-only payloads are supported. Callers must avoid
+  pool starvation by not blocking all workers on mutually dependent
+  channels. Destruction requires all users to have finished.
+- `ConcurrencyBudget`: a shared counting admission budget with move-only
+  RAII `Permit`, nonblocking `try_acquire`, and stop-aware blocking
+  `acquire`. It does not cap the scheduler's physical workers or reserve
+  CPU cores. Blocking on permits from a bounded pool can deadlock when
+  queued tasks must release them; use `try_acquire` from pool tasks.
+
+These serve CDCL portfolio communication and common CPU capacity
+coordination for BDD, CDCL and DNN, without specifying clause formats
+or numerical operators. The first tests cover FIFO order, close and
+drain, stop, move-only messages, independent producer/consumer tasks,
+permit release and invalid capacities. Follow up with concurrency
+stress, timeouts, and realistic workload benchmarks before treating
+them as production performance results.
+
+README policy: the public README contains only the introduction,
+feature summary, and build instructions. Examples, benchmarks, tests,
+implementation decisions and tutorial material belong outside README.
+The introduction spells out BDD (Binary Decision Diagrams), CDCL
+(Conflict-Driven Clause Learning) and DNN (Deep Neural Networks).
