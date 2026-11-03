@@ -342,6 +342,88 @@ class TestParallel : public Ariadne::Testing::ContextFixture {
         ARIADNE_TESTING_EXPECT_EQUAL(visited.load(),1u);
         ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
     }
+
+    void test_reduce_invalid_ranges_and_empty() {
+        ThreadPool pool(2);
+        auto map=[](std::size_t i) { return static_cast<int>(i); };
+        auto reduce=[](int a,int b) { return a+b; };
+        ARIADNE_TESTING_EXPECT_EXCEPTION(
+            parallel_reduce(pool,5u,4u,0,map,reduce));
+        ARIADNE_TESTING_EXPECT_EXCEPTION(
+            parallel_reduce_fixed_blocks(pool,5u,4u,0,map,reduce));
+        ARIADNE_TESTING_EXPECT_EXCEPTION(
+            parallel_reduce_fixed_blocks(pool,0u,4u,0,map,reduce,
+                                         ParallelOptions{0u,0u}));
+        ARIADNE_TESTING_EXPECT_EQUAL(
+            parallel_reduce_fixed_blocks(pool,7u,7u,42,map,reduce,
+                                         ParallelOptions{4u,0u}),42);
+        ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
+    }
+
+    void test_reduce_stop_during_final_combine() {
+        // A stop requested by reduce while partial lane results are being
+        // combined aborts the whole reduction; no partial value is returned.
+        for(unsigned workers : {1u,2u}) {
+            ThreadPool pool(workers);
+            const std::size_t count=6u;
+            std::stop_source stop;
+            std::atomic<unsigned> reduce_calls{0u};
+            // Each lane reduces once per element, so the first count reduce
+            // calls happen inside the lanes; the next one is the first
+            // combine of partial lane results.
+            auto reduce=[&](unsigned a,unsigned b) {
+                if(reduce_calls.fetch_add(1u,std::memory_order_relaxed)+1u
+                   ==count+1u)
+                    stop.request_stop();
+                return a+b;
+            };
+            ARIADNE_TESTING_EXPECT_EXCEPTION(parallel_reduce(
+                pool,0u,count,0u,
+                [](std::size_t)->unsigned { return 1u; },
+                reduce,ParallelOptions{1u,0u},stop.get_token()));
+            ARIADNE_TESTING_PROVE(stop.stop_requested());
+            ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
+        }
+    }
+
+    void test_fixed_blocks_stop_during_final_combine() {
+        // With grain_size one, every block holds a single element, so the
+        // reduce calls after the first `count` ones happen in the final
+        // block-combining loop, where a stop must abort the reduction.
+        ThreadPool pool(2);
+        for(std::size_t count : {2u,3u}) {
+            std::stop_source stop;
+            std::atomic<unsigned> reduce_calls{0u};
+            auto reduce=[&](unsigned a,unsigned b) {
+                if(reduce_calls.fetch_add(1u,std::memory_order_relaxed)+1u
+                   ==count+1u)
+                    stop.request_stop();
+                return a+b;
+            };
+            ARIADNE_TESTING_EXPECT_EXCEPTION(parallel_reduce_fixed_blocks(
+                pool,0u,count,0u,
+                [](std::size_t)->unsigned { return 1u; },
+                reduce,ParallelOptions{1u,0u},stop.get_token()));
+            ARIADNE_TESTING_PROVE(stop.stop_requested());
+            ARIADNE_TESTING_EXPECT_EQUAL(reduce_calls.load(),
+                                         static_cast<unsigned>(count+1u));
+            ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
+        }
+    }
+
+    void test_forked_lane_failure_propagates() {
+        // The caller lane succeeds while a forked lane throws: the join
+        // failure must still propagate after all lanes are joined.
+        ThreadPool pool(1);
+        std::atomic<unsigned> entered{0u};
+        ARIADNE_TESTING_EXPECT_EXCEPTION(parallel_for(
+            pool,0u,8u,[&](std::size_t i) {
+                entered.fetch_add(1u,std::memory_order_relaxed);
+                if(i>=4u)throw std::runtime_error("expected");
+            },ParallelOptions{1u,0u}));
+        ARIADNE_TESTING_PROVE(entered.load()>0u);
+        ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
+    }
 };
 
 int main(int argc,char** argv) {
@@ -362,5 +444,9 @@ int main(int argc,char** argv) {
     ARIADNE_TESTING_ADD_TEST(TestParallel,test_budget_exhaustion_and_exception_release);
     ARIADNE_TESTING_ADD_TEST(TestParallel,test_portfolio_stop);
     ARIADNE_TESTING_ADD_TEST(TestParallel,test_portfolio_exception_and_scope_join);
+    ARIADNE_TESTING_ADD_TEST(TestParallel,test_reduce_invalid_ranges_and_empty);
+    ARIADNE_TESTING_ADD_TEST(TestParallel,test_reduce_stop_during_final_combine);
+    ARIADNE_TESTING_ADD_TEST(TestParallel,test_fixed_blocks_stop_during_final_combine);
+    ARIADNE_TESTING_ADD_TEST(TestParallel,test_forked_lane_failure_propagates);
     return ARIADNE_TESTING_RUN_TESTS_WITH_ARGS(argc,argv);
 }
