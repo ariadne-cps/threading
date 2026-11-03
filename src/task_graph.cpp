@@ -81,16 +81,20 @@ void TaskGraph::run(ThreadPool& scheduler,ParallelOptions options,
         auto execute=[&](std::size_t) {
             for(;;) {
                 TaskId id;
+                bool has_task=false;
                 {
                     std::unique_lock lock(mutex);
                     changed.wait(lock,[&] {
                         return failed || stop.stop_requested() ||
                                completed==count || !ready.empty();
                     });
-                    if(failed || stop.stop_requested() || completed==count)return;
-                    id=ready.front();
-                    ready.pop_front();
+                    if(!(failed || stop.stop_requested() || completed==count)) {
+                        id=ready.front();
+                        ready.pop_front();
+                        has_task=true;
+                    }
                 }
+                if(!has_task)return;
                 std::exception_ptr error;
                 try {
                     ScopedRoundingMode rounding(options.rounding_mode);
