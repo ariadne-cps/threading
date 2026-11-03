@@ -323,10 +323,19 @@ class TestTaskGroup : public Ariadne::Testing::ContextFixture {
             ++completed;
             return 53;
         });
+        auto next=group.fork([&] {
+            ++completed;
+            return 59;
+        });
+        // The previously failed registration must not corrupt the
+        // group's additional-joiner path or suppress either result.
         group.join();
         ARIADNE_TESTING_EXPECT_EQUAL(recovered.get(),53);
-        ARIADNE_TESTING_EXPECT_EQUAL(completed.load(),2u);
+        ARIADNE_TESTING_EXPECT_EQUAL(next.get(),59);
+        ARIADNE_TESTING_EXPECT_EQUAL(completed.load(),3u);
         ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
+        group.join();
+        ARIADNE_TESTING_EXPECT_EQUAL(completed.load(),3u);
     }
 
     void test_void_handle() {
