@@ -80,7 +80,7 @@ void TaskGraph::run(ThreadPool& scheduler,ParallelOptions options,
         const auto lanes=reservation.lanes();
         auto execute=[&](std::size_t) {
             for(;;) {
-                TaskId id;
+                TaskId id{};
                 bool has_task=false;
                 {
                     std::unique_lock lock(mutex);
