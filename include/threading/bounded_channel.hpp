@@ -60,51 +60,63 @@ class BoundedChannel {
 
     //! Return true only for the first close().
     bool close() {
+        bool first_close;
         {
             std::lock_guard lock(_mutex);
-            if(_closed)return false;
+            first_close=!_closed;
             _closed=true;
         }
-        _not_empty.notify_all();
-        _not_full.notify_all();
-        return true;
+        if(first_close) {
+            _not_empty.notify_all();
+            _not_full.notify_all();
+        }
+        return first_close;
     }
 
     template<class U> requires std::constructible_from<T,U&&>
     bool try_send(U&& item) {
+        bool sent=false;
         {
             std::lock_guard lock(_mutex);
-            if(_closed || _items.size()==_capacity)return false;
-            _items.emplace_back(std::forward<U>(item));
+            if(!_closed && _items.size()<_capacity) {
+                _items.emplace_back(std::forward<U>(item));
+                sent=true;
+            }
         }
-        _not_empty.notify_one();
-        return true;
+        if(sent)_not_empty.notify_one();
+        return sent;
     }
 
     //! False on cancellation or closure. Failed sends do not move from item.
     template<class U> requires std::constructible_from<T,U&&>
     bool send(U&& item,std::stop_token stop={}) {
+        bool sent=false;
         {
             std::unique_lock lock(_mutex);
             _not_full.wait(lock,stop,[&] {
                 return _closed || _items.size()<_capacity;
             });
-            if(stop.stop_requested() || _closed)return false;
-            _items.emplace_back(std::forward<U>(item));
+            if(!stop.stop_requested() && !_closed) {
+                _items.emplace_back(std::forward<U>(item));
+                sent=true;
+            }
         }
-        _not_empty.notify_one();
-        return true;
+        if(sent)_not_empty.notify_one();
+        return sent;
     }
 
     std::optional<T> try_receive() {
         std::optional<T> result;
+        bool received=false;
         {
             std::lock_guard lock(_mutex);
-            if(_items.empty())return std::nullopt;
-            result.emplace(std::move(_items.front()));
-            _items.pop_front();
+            if(!_items.empty()) {
+                result.emplace(std::move(_items.front()));
+                _items.pop_front();
+                received=true;
+            }
         }
-        _not_full.notify_one();
+        if(received)_not_full.notify_one();
         return result;
     }
 
@@ -112,16 +124,19 @@ class BoundedChannel {
     //! A requested stop takes precedence over a buffered message.
     std::optional<T> receive(std::stop_token stop={}) {
         std::optional<T> result;
+        bool received=false;
         {
             std::unique_lock lock(_mutex);
             _not_empty.wait(lock,stop,[&] {
                 return _closed || !_items.empty();
             });
-            if(stop.stop_requested() || _items.empty())return std::nullopt;
-            result.emplace(std::move(_items.front()));
-            _items.pop_front();
+            if(!stop.stop_requested() && !_items.empty()) {
+                result.emplace(std::move(_items.front()));
+                _items.pop_front();
+                received=true;
+            }
         }
-        _not_full.notify_one();
+        if(received)_not_full.notify_one();
         return result;
     }
 
