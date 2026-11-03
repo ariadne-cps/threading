@@ -277,6 +277,55 @@ class TestSmartThreadPool : public Ariadne::Testing::ContextFixture {
         ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),0);
     }
 
+    void test_enqueue_to_stopping_pool_throws() {
+        // Once destruction has begun, an external thread must observe
+        // StoppedThreadPoolException instead of queueing more work, while
+        // the running task is drained and workers exit cleanly.
+        auto* pool=new ThreadPool(2u);
+        std::atomic<bool> task_started{false};
+        std::atomic<bool> release{false};
+        std::atomic<bool> got_exception{false};
+        auto future=pool->enqueue([&] {
+            task_started.store(true);
+            while(!release.load())std::this_thread::yield();
+        });
+        while(!task_started.load())std::this_thread::yield();
+        // The pool outlives the spammer: destruction joins the worker that
+        // runs the task, and the task is released only after spammer.join().
+        std::thread destroyer([&] { delete pool; });
+        std::thread spammer([&] {
+            for(unsigned i=0u;!got_exception.load() && i<1000000u;++i) {
+                try {
+                    pool->enqueue_ticket([] {});
+                } catch(StoppedThreadPoolException const&) {
+                    got_exception.store(true);
+                }
+            }
+        });
+        const auto deadline=std::chrono::steady_clock::now()+5s;
+        while(!got_exception.load() && std::chrono::steady_clock::now()<deadline)
+            std::this_thread::yield();
+        spammer.join();
+        release.store(true);
+        future.get();
+        destroyer.join();
+        ARIADNE_TESTING_PROVE(got_exception.load());
+    }
+
+    void test_shrink_drains_queued_work() {
+        ThreadPool pool(2u);
+        for(unsigned round=0u;round<200u;++round) {
+            std::vector<future<void>> futures;
+            for(unsigned i=0u;i<8u;++i)
+                futures.push_back(pool.enqueue([] { std::this_thread::yield(); }));
+            ARIADNE_TESTING_EXPECT_NO_THROW(pool.set_num_threads(1u));
+            ARIADNE_TESTING_EXPECT_NO_THROW(pool.set_num_threads(2u));
+            for(auto& future:futures)future.get();
+        }
+        ARIADNE_TESTING_EXPECT_EQUAL(pool.num_threads(),2u);
+        ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),0u);
+    }
+
 };
 
 int main(int argc, char** argv) {
@@ -302,5 +351,7 @@ int main(int argc, char** argv) {
     ARIADNE_TESTING_ADD_TEST(TestSmartThreadPool, test_shrink_from_worker_is_rejected);
     ARIADNE_TESTING_ADD_TEST(TestSmartThreadPool, test_resize_repeatedly);
     ARIADNE_TESTING_ADD_TEST(TestSmartThreadPool, test_set_num_threads_to_zero_dynamically);
+    ARIADNE_TESTING_ADD_TEST(TestSmartThreadPool, test_enqueue_to_stopping_pool_throws);
+    ARIADNE_TESTING_ADD_TEST(TestSmartThreadPool, test_shrink_drains_queued_work);
     return ARIADNE_TESTING_RUN_TESTS_WITH_ARGS(argc, argv);
 }
