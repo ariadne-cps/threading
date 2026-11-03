@@ -37,7 +37,7 @@ BufferedThread::BufferedThread(String name)
     _thread = std::thread([=,this]() {
         _id = std::this_thread::get_id();
         _got_id_promise.set_value();
-        while(true) {
+        for(;;) {
             try {
                 std::function<void(void)> task = _task_buffer.pull();
                 task();

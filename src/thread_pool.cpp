@@ -187,13 +187,16 @@ void ThreadPool::_extract(TaskQueue& queue,TaskQueue::iterator it,VoidFunction& 
 bool ThreadPool::try_run_task(Ticket const& ticket) {
     if(!ticket || ticket->owner!=this)return false;
     VoidFunction task;
+    bool extracted=false;
     {
         std::lock_guard<std::mutex> lock(*ticket->queue_mutex);
-        if(!ticket->pending)return false;
-        _extract(*ticket->queue,ticket->position,task);
+        if(ticket->pending) {
+            _extract(*ticket->queue,ticket->position,task);
+            extracted=true;
+        }
     }
-    _execute(std::move(task));
-    return true;
+    if(extracted)_execute(std::move(task));
+    return extracted;
 }
 
 bool ThreadPool::_take_global(VoidFunction& task) {
