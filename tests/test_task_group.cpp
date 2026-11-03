@@ -149,6 +149,35 @@ class TestTaskGroup : public Ariadne::Testing::ContextFixture {
         ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
         // Joining after an exception must be a no-op.
         group.join();
+
+        // If the first child succeeds and a later child fails, join()
+        // must retain the later exception and still drain every task.
+        TaskGroup later_failure(pool);
+        std::atomic<unsigned> later_completed{0u};
+        auto first_success=later_failure.fork([&] {
+            ++later_completed;
+            return 41;
+        });
+        later_failure.fork([&] {
+            ++later_completed;
+            throw std::runtime_error("later");
+        });
+        auto final_success=later_failure.fork([&] {
+            ++later_completed;
+            return 43;
+        });
+        bool later_observed=false;
+        try {
+            later_failure.join();
+        } catch (std::runtime_error const& error) {
+            later_observed=std::string(error.what())=="later";
+        }
+        ARIADNE_TESTING_PROVE(later_observed);
+        ARIADNE_TESTING_EXPECT_EQUAL(later_completed.load(),3u);
+        ARIADNE_TESTING_EXPECT_EQUAL(first_success.get(),41);
+        ARIADNE_TESTING_EXPECT_EQUAL(final_success.get(),43);
+        ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
+        later_failure.join();
     }
 
     void test_multiple_forks_destruction_drains() {
