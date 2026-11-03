@@ -141,28 +141,31 @@ class TaskGroup {
         // Ticket-based acquisition ensures that both a waiting handle and
         // a worker use the scheduler's single physical queue entry.
         const auto ticket=_scheduler.enqueue_ticket([task] { (*task)(); });
-        // The callback representation retains targeted, exact-once helping.
-        // In one-worker tests it lets the caller acquire more short tasks
-        // than the direct-ticket representation, avoiding costly handoffs.
-        // Keep direct ticket handles available for explicit use and A/B tests.
-        auto try_execute=[scheduler=&_scheduler,ticket] {
-            return scheduler->try_run_task(ticket);
-        };
-        TaskHandle<Scheduler,Result> handle(
-            _scheduler,std::move(future),try_execute);
+        // Once queued, any failure in the handle or joiner construction
+        // must still wait for this child. Keeping a shared future alive also
+        // covers a failure before the handle has been fully constructed.
         try {
+            // The callback representation retains targeted, exact-once helping.
+            // In one-worker tests it lets the caller acquire more short tasks
+            // than the direct-ticket representation, avoiding costly handoffs.
+            // Keep direct ticket handles available for explicit use and A/B tests.
+            auto try_execute=[scheduler=&_scheduler,ticket] {
+                return scheduler->try_run_task(ticket);
+            };
+            TaskHandle<Scheduler,Result> handle(_scheduler,future,try_execute);
             // The common recursive fork/compute/join pattern owns one child.
             // Store its joiner directly; do not allocate a vector buffer.
             if (not _first_joiner)
                 _first_joiner=[handle] { static_cast<void>(handle.get()); };
             else
                 _joiners.emplace_back([handle] { static_cast<void>(handle.get()); });
+            return handle;
         } catch (...) {
             // A launched child must never outlive the owning scope on error.
-            handle.wait();
+            (void)_scheduler.try_run_task(ticket);
+            future.wait();
             throw;
         }
-        return handle;
     }
 
     //! \brief Join all forked tasks, helping while waiting for their results.

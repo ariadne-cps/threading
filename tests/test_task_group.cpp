@@ -33,6 +33,44 @@
 
 using namespace Ariadne;
 
+// A scheduler ticket is allowed to have a throwing copy constructor.
+// Fail while TaskGroup converts its targeted-help callback into a
+// std::function, after enqueueing the child but before recording its joiner.
+class ThrowingTicketScheduler {
+  public:
+    struct Ticket {
+        ThreadPool::Ticket underlying;
+        unsigned copies=0u;
+
+        explicit Ticket(ThreadPool::Ticket value)
+            : underlying(std::move(value)) { }
+
+        Ticket(Ticket const& other)
+            : underlying(other.underlying),copies(other.copies+1u) {
+            if(other.copies==1u)
+                throw std::runtime_error("ticket callback copy failed");
+        }
+
+        Ticket(Ticket&&)=default;
+    };
+
+    explicit ThrowingTicketScheduler(ThreadPool& pool) : _pool(pool) { }
+
+    template<class F>
+    Ticket enqueue_ticket(F&& task) {
+        return Ticket(_pool.enqueue_ticket(std::forward<F>(task)));
+    }
+
+    bool try_run_task(Ticket const& ticket) {
+        return _pool.try_run_task(ticket.underlying);
+    }
+
+    bool try_run_one_task() { return _pool.try_run_one_task(); }
+
+  private:
+    ThreadPool& _pool;
+};
+
 class TestTaskGroup : public Ariadne::Testing::ContextFixture {
   public:
     using ContextFixture::ContextFixture;
@@ -253,6 +291,27 @@ class TestTaskGroup : public Ariadne::Testing::ContextFixture {
         ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
     }
 
+    void test_failed_handle_construction_drains_started_child() {
+        ThreadPool pool(0);
+        ThrowingTicketScheduler scheduler(pool);
+        TaskGroup<ThrowingTicketScheduler> group(scheduler);
+        std::atomic<unsigned> completed{0u};
+        bool copy_failed=false;
+        try {
+            group.fork([&] {
+                ++completed;
+                return 47;
+            });
+        } catch(std::runtime_error const& error) {
+            copy_failed=std::string(error.what())=="ticket callback copy failed";
+        }
+        ARIADNE_TESTING_PROVE(copy_failed);
+        // fork() must not leave an unregistered task behind after failure.
+        ARIADNE_TESTING_EXPECT_EQUAL(completed.load(),1u);
+        ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
+        group.join();
+    }
+
     void test_void_handle() {
         ThreadPool pool(0);
         TaskGroup group(pool);
@@ -384,6 +443,7 @@ int main(int argc, char** argv) {
     ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_ticket_queue_churn);
     ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_destructor_joins);
     ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_destructor_suppresses_child_exception);
+    ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_failed_handle_construction_drains_started_child);
     ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_void_handle);
     ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_explicit_direct_ticket_handle);
     ARIADNE_TESTING_ADD_TEST(TestTaskGroup, test_generic_future_helping_is_preserved);
