@@ -40,14 +40,16 @@ class ThrowingTicketScheduler {
   public:
     struct Ticket {
         ThreadPool::Ticket underlying;
+        bool* throw_on_copy;
         unsigned copies=0u;
 
-        explicit Ticket(ThreadPool::Ticket value)
-            : underlying(std::move(value)) { }
+        Ticket(ThreadPool::Ticket value,bool& should_throw)
+            : underlying(std::move(value)),throw_on_copy(&should_throw) { }
 
         Ticket(Ticket const& other)
-            : underlying(other.underlying),copies(other.copies+1u) {
-            if(other.copies==1u)
+            : underlying(other.underlying),throw_on_copy(other.throw_on_copy),
+              copies(other.copies+1u) {
+            if(*throw_on_copy && other.copies==1u)
                 throw std::runtime_error("ticket callback copy failed");
         }
 
@@ -56,9 +58,12 @@ class ThrowingTicketScheduler {
 
     explicit ThrowingTicketScheduler(ThreadPool& pool) : _pool(pool) { }
 
+    bool throw_on_copy=true;
+
     template<class F>
     Ticket enqueue_ticket(F&& task) {
-        return Ticket(_pool.enqueue_ticket(std::forward<F>(task)));
+        return Ticket(_pool.enqueue_ticket(std::forward<F>(task)),
+                      throw_on_copy);
     }
 
     bool try_run_task(Ticket const& ticket) {
@@ -310,6 +315,18 @@ class TestTaskGroup : public Ariadne::Testing::ContextFixture {
         ARIADNE_TESTING_EXPECT_EQUAL(completed.load(),1u);
         ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
         group.join();
+
+        // The failed registration must not poison this group. Reuse the
+        // exact same scheduler/handle instantiation without a copy failure.
+        scheduler.throw_on_copy=false;
+        auto recovered=group.fork([&] {
+            ++completed;
+            return 53;
+        });
+        group.join();
+        ARIADNE_TESTING_EXPECT_EQUAL(recovered.get(),53);
+        ARIADNE_TESTING_EXPECT_EQUAL(completed.load(),2u);
+        ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
     }
 
     void test_void_handle() {
