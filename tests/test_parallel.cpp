@@ -111,6 +111,23 @@ class TestParallel : public Ariadne::Testing::ContextFixture {
         }
     }
 
+    void test_invalid_rounding_mode_rejected_without_state_change() {
+        // The requested mode is not one of the supported FE_* constants.
+        // A failed construction must leave the caller's FP environment
+        // unchanged, and the exception must remain observable.
+        const int original=std::fegetround();
+        ARIADNE_TESTING_PROVE(original!=-1);
+        ARIADNE_TESTING_EXPECT_EXCEPTION(ScopedRoundingMode(-1));
+        ARIADNE_TESTING_EXPECT_EQUAL(std::fegetround(),original);
+
+        // A valid guard must still work after a rejected request.
+        {
+            ScopedRoundingMode guard(FE_TONEAREST);
+            ARIADNE_TESTING_EXPECT_EQUAL(std::fegetround(),FE_TONEAREST);
+        }
+        ARIADNE_TESTING_EXPECT_EQUAL(std::fegetround(),original);
+    }
+
     void test_rounding_mode_restored_after_exception() {
         for(unsigned workers : {0u,1u,4u}) {
             ThreadPool pool(workers);
@@ -336,6 +353,7 @@ int main(int argc,char** argv) {
     ARIADNE_TESTING_ADD_TEST(TestParallel,test_exception_drains_lanes);
     ARIADNE_TESTING_ADD_TEST(TestParallel,test_rounding_mode_is_scoped_per_lane);
     ARIADNE_TESTING_ADD_TEST(TestParallel,test_rounding_mode_restored_after_exception);
+    ARIADNE_TESTING_ADD_TEST(TestParallel,test_invalid_rounding_mode_rejected_without_state_change);
     ARIADNE_TESTING_ADD_TEST(TestParallel,test_fixed_block_reduce_independent_of_workers);
     ARIADNE_TESTING_ADD_TEST(TestParallel,test_fixed_block_reduce_exceptions_and_rounding);
     ARIADNE_TESTING_ADD_TEST(TestParallel,test_cooperative_parallel_cancellation);
