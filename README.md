@@ -8,6 +8,7 @@
 [![codecov](https://codecov.io/gh/ariadne-cps/threading/branch/main/graph/badge.svg)](https://codecov.io/gh/ariadne-cps/threading)
 
 A C++20 library for thread management, concurrent workloads and CPU task scheduling, integrated with [Logging](https://github.com/ariadne-cps/logging).
+Although independently maintained and usable, this repository is also part of the [Ariadne repository structure](https://github.com/ariadne-cps/ariadne/blob/main/doc/structure.md).
 
 The three reference use cases are **BDD (Binary Decision Diagrams)** for recursive symbolic computations, **CDCL (Conflict-Driven Clause Learning)** for satisfiability search including SMT solving, and **DNN (Deep Neural Networks)** for both training and inference. Threading provides common execution mechanisms rather than application-specific algorithms.
 
