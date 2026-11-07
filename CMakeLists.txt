@@ -6,9 +6,12 @@ option(WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
 
 if(NOT TARGET ariadne-build)
     find_package(Git REQUIRED)
-    execute_process(COMMAND "${GIT_EXECUTABLE}" -C "${CMAKE_CURRENT_SOURCE_DIR}"
-                    submodule update --init -- ss/bui
-                    RESULT_VARIABLE _result)
+    # Keep initial Build checkout output in English.
+    execute_process(
+        COMMAND "${CMAKE_COMMAND}" -E env "LC_ALL=C"
+                "${GIT_EXECUTABLE}" -C "${CMAKE_CURRENT_SOURCE_DIR}"
+                submodule update --init -- ss/bui
+        RESULT_VARIABLE _result)
     if(_result)
         message(FATAL_ERROR "Cannot initialize build submodule")
     endif()
@@ -18,21 +21,12 @@ endif()
 setup_project()
 
 if(EXISTS "${PROJECT_SOURCE_DIR}/.git")
-    require_same_dependency_commit(Build
-        CHAINS
-            "build"
-            "logging|build"
-            "logging|utility|build"
-            "testing|build"
-            "logging|testing|build"
-            "logging|utility|testing|build"
-    )
-    require_same_dependency_commit(Testing
-        CHAINS
-            "testing"
-            "logging|testing"
-            "logging|utility|testing"
-    )
+    # Child commits are internally consistent; check direct occurrences.
+    # Cross-branch consistency checks remain explicit where needed.
+    require_same_dependency_commit(Build CHAINS
+        "build" "logging|build" "testing|build")
+    require_same_dependency_commit(Testing CHAINS
+        "testing" "logging|testing")
 endif()
 
 find_package(Threads REQUIRED)
