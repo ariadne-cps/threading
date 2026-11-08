@@ -49,6 +49,8 @@ struct Options {
     unsigned work=2048u;
     unsigned batch_grain=16u;
     unsigned samples=7u;
+    unsigned warmups=0u;
+    Bench::SummaryFields summary_fields=Bench::default_summary_fields();
 };
 
 unsigned parse_positive(std::string const& value,unsigned maximum) {
@@ -61,42 +63,70 @@ unsigned parse_positive(std::string const& value,unsigned maximum) {
     return static_cast<unsigned>(parsed);
 }
 
-Options parse_options(int argc,char** argv) {
+// Workloads retain their domain-specific options but reuse Benchmarking CLI.
+std::optional<Options> parse_options(int argc,char** argv) {
     Options options;
-    for(int i=1;i<argc;++i) {
-        const std::string option=argv[i];
-        if(option=="--help") {
-            std::cout << "Synthetic BDD/CDCL/DNN threading workload benchmark\n"
-                << "  --mode cdcl|dnn-forward|dnn-gradient|all\n"
-                << "  --workers N   dedicated pool workers, 0..64 (default 4)\n"
-                << "  --cases N     independent candidates / batch items, 1..4096 (default 128)\n"
-                << "  --work N      CDCL-only integer mixing rounds, 1..100000 (default 2048)\n"
-                << "  --batch-grain N  DNN batch items per graph group, 1..4096 (default 16)\n"
-                << "                   1 reproduces the original one-item-per-stage DAG\n"
-                << "  --samples N   odd 3..101 (default 7)\n"
-                << "The CDCL case is a portfolio analogue, NOT a satisfiability solver.\n"
-                << "DNN workloads compare TaskGraph and grouped parallel_for with\n"
-                << "identical per-sample math, but different execution schedules.\n"
-                << "They are CPU dense kernels, NOT training a model.\n";
-            std::exit(0);
+    Bench::CommandLine cli;
+    cli.add(CommandLineContribution("use-cases", {
+        make_valued_argument_parser("", "mode",
+            "Workload: cdcl, dnn-forward, dnn-gradient, all (default all)",
+            [&options](String const& value) -> VoidFunction {
+                const std::string result(value);
+                if(result!="cdcl" && result!="dnn-forward" && result!="dnn-gradient" && result!="all")
+                    throw std::invalid_argument("invalid benchmark mode");
+                return [&options,result] { options.mode=result; };
+            }),
+        make_valued_argument_parser("", "workers",
+            "Dedicated pool workers, 0..64 (default 4)",
+            [&options](String const& value) -> VoidFunction {
+                const unsigned result=parse_positive(std::string(value),64u);
+                
+                return [&options,result] { options.workers=result; };
+            }),
+        make_valued_argument_parser("", "cases",
+            "Independent candidates / batch items, 1..4096 (default 128)",
+            [&options](String const& value) -> VoidFunction {
+                const unsigned result=parse_positive(std::string(value),4096u);
+                if(result==0u)throw std::invalid_argument("cases must be positive");
+                return [&options,result] { options.cases=result; };
+            }),
+        make_valued_argument_parser("", "work",
+            "CDCL integer mixing rounds, 1..100000 (default 2048)",
+            [&options](String const& value) -> VoidFunction {
+                const unsigned result=parse_positive(std::string(value),100000u);
+                if(result==0u)throw std::invalid_argument("work must be positive");
+                return [&options,result] { options.work=result; };
+            }),
+        make_valued_argument_parser("", "batch-grain",
+            "DNN batch items per graph group, 1..4096 (default 16)",
+            [&options](String const& value) -> VoidFunction {
+                const unsigned result=parse_positive(std::string(value),4096u);
+                if(result==0u)throw std::invalid_argument("batch-grain must be positive");
+                return [&options,result] { options.batch_grain=result; };
+            }),
+        make_valued_argument_parser("", "samples",
+            "Odd sample count, 3..101 (default 7)",
+            [&options](String const& value) -> VoidFunction {
+                const unsigned result=parse_positive(std::string(value),101u);
+                if(result<3u || result%2u==0u)throw std::invalid_argument("samples must be odd, 3..101");
+                return [&options,result] { options.samples=result; };
+            })
+    }));
+    List<String> args;
+    for(int i=0;i<argc;++i)args.append(String(argv[i]));
+    const bool help=std::find(args.begin(),args.end(),String("--help"))!=args.end()
+        || std::find(args.begin(),args.end(),String("-h"))!=args.end();
+    if(not cli.acquire(args)) {
+        if(help) {
+            std::cout << "CDCL is a portfolio analogue, not a SAT solver.\n"
+                << "DNN kernels compare TaskGraph and parallel_for with identical math.\n"
+                << "They are CPU-dense kernels, not full neural network training.\n";
+            return std::nullopt;
         }
-        if(i+1>=argc)
-            throw std::invalid_argument("missing value after "+option);
-        const std::string value=argv[++i];
-        if(option=="--mode")options.mode=value;
-        else if(option=="--workers")options.workers=parse_positive(value,64u);
-        else if(option=="--cases")options.cases=parse_positive(value,4096u);
-        else if(option=="--work")options.work=parse_positive(value,100000u);
-        else if(option=="--batch-grain")options.batch_grain=parse_positive(value,4096u);
-        else if(option=="--samples")options.samples=parse_positive(value,101u);
-        else throw std::invalid_argument("unknown option "+option);
+        throw std::invalid_argument("invalid benchmark command line");
     }
-    if(options.mode!="cdcl" && options.mode!="dnn-forward" &&
-       options.mode!="dnn-gradient" && options.mode!="all")
-        throw std::invalid_argument("invalid benchmark mode");
-    if(options.cases==0u || options.work==0u || options.batch_grain==0u ||
-       options.samples<3u || options.samples%2u==0u)
-        throw std::invalid_argument("invalid count, work or samples");
+    options.warmups=cli.warmups();
+    options.summary_fields=cli.summary_fields();
     return options;
 }
 
@@ -135,9 +165,7 @@ void print_pair(std::string const& mode,Options const& options,
         + " samples=" + std::to_string(options.samples)
         + (mode=="cdcl" ? " work=" + std::to_string(options.work)
                         : " graph_nodes=" + std::to_string(graph_nodes));
-    Bench::Report report(mode + " benchmark (ns)", {
-        Bench::SummaryField::Median, Bench::SummaryField::Minimum,
-        Bench::SummaryField::Maximum, Bench::SummaryField::MAD});
+    Bench::Report report(mode + " benchmark (ns)", options.summary_fields);
     report.add(config, "sequential",serial);
     report.add(config, "parallel",parallel);
     std::cout << report.table();
@@ -155,9 +183,7 @@ void print_dnn_comparison(std::string const& mode,Options const& options,
         + " batch_grain=" + std::to_string(options.batch_grain)
         + " graph_nodes=" + std::to_string(graph_nodes)
         + " groups=" + std::to_string(groups);
-    Bench::Report report(mode + " benchmark (ns)", {
-        Bench::SummaryField::Median, Bench::SummaryField::Minimum,
-        Bench::SummaryField::Maximum, Bench::SummaryField::MAD});
+    Bench::Report report(mode + " benchmark (ns)", options.summary_fields);
     report.add(config, "sequential",serial);
     report.add(config, "task_graph",graph);
     report.add(config, "parallel_for",fused);
@@ -202,6 +228,9 @@ void benchmark_cdcl(Options const& options) {
     const auto reference=sequential();
     if(!reference || *reference!=target || concurrent()!=reference)
         throw std::runtime_error("CDCL analogue warm-up result mismatch");
+    for (std::uint64_t i=0u; i<options.warmups; ++i)
+        if(sequential()!=reference || concurrent()!=reference || pool.queue_size()!=0u)
+            throw std::runtime_error("CDCL additional warm-up mismatch");
 
     std::vector<double> seq_times,par_times;
     for(unsigned sample=0u;sample<options.samples;++sample) {
@@ -368,6 +397,15 @@ void benchmark_dnn(Options const& options,bool gradient) {
     if(fingerprint(graph_state)!=checksum ||
        fingerprint(for_state)!=checksum || pool.queue_size()!=0u)
         throw std::runtime_error("DNN warm-up fingerprint or queue mismatch");
+    for (std::uint64_t i=0u; i<options.warmups; ++i) {
+        sequential();
+        concurrent_graph();
+        concurrent_for();
+        if(fingerprint(reference_state)!=checksum ||
+           fingerprint(graph_state)!=checksum ||
+           fingerprint(for_state)!=checksum || pool.queue_size()!=0u)
+            throw std::runtime_error("DNN additional warm-up mismatch");
+    }
 
     std::vector<double> seq_times,graph_times,for_times;
     seq_times.reserve(options.samples);
@@ -404,7 +442,9 @@ int main(int argc,char** argv) {
         // Avoid background workers from the process-wide manager while
         // independently measuring the selected ThreadPool worker count.
         ThreadManager::instance().set_concurrency(0u);
-        const auto options=parse_options(argc,argv);
+        const auto parsed=parse_options(argc,argv);
+        if(not parsed) return 0;
+        const auto& options=*parsed;
         if(options.mode=="cdcl" || options.mode=="all")
             benchmark_cdcl(options);
         if(options.mode=="dnn-forward" || options.mode=="all")
