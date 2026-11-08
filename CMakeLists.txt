@@ -55,7 +55,7 @@ setup_project_library(
     LINK_LIBRARIES threading
 )
 
-setup_standalone_project_tests(
+setup_standalone_project(
     TARGET ariadne-threading
     TEST_DIRECTORY tests
     TEST_TARGET tests
