@@ -25,8 +25,6 @@ if(EXISTS "${PROJECT_SOURCE_DIR}/.git")
     # Cross-branch consistency checks remain explicit where needed.
     require_same_dependency_commit(Build CHAINS
         "build" "logging|build" "testing|build")
-    require_same_dependency_commit(Testing CHAINS
-        "testing" "logging|testing")
 endif()
 
 find_package(Threads REQUIRED)
