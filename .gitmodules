@@ -7,3 +7,7 @@
 [submodule "tst"]
 	path = ss/tst
 	url = https://github.com/ariadne-cps/testing
+
+[submodule "bmk"]
+	path = ss/bmk
+	url = https://github.com/ariadne-cps/benchmarking

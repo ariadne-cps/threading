@@ -25,6 +25,7 @@ The three reference use cases are **BDD (Binary Decision Diagrams)** for recursi
 - Shared nonblocking spawning limits through RAII `ConcurrencyBudget` permits.
 - Thread-safe workload progress tracking and integration with Logging.
 - Public headers available individually or through `ariadne-threading.hpp`.
+- Standalone benchmarks use [Benchmarking](https://github.com/ariadne-cps/benchmarking) as an opt-in development dependency; it is not linked into the production Threading library.
 
 ## Build
 

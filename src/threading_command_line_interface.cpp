@@ -27,9 +27,8 @@
 
 namespace Ariadne {
 
-ThreadingCommandLineInterface::ThreadingCommandLineInterface() {
-    ThreadManager::instance();
-    add(CommandLineContribution(
+CommandLineContribution threading_command_line_contribution() {
+    return CommandLineContribution(
         "threading",
         {
             make_valued_argument_parser(
@@ -52,7 +51,12 @@ ThreadingCommandLineInterface::ThreadingCommandLineInterface() {
                             static_cast<SizeType>(concurrency));
                     };
                 })
-        }));
+        });
+}
+
+ThreadingCommandLineInterface::ThreadingCommandLineInterface() {
+    ThreadManager::instance();
+    add(threading_command_line_contribution());
 }
 
 } // namespace Ariadne

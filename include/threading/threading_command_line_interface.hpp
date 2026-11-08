@@ -29,6 +29,9 @@
 
 namespace Ariadne {
 
+//! Contribution for the concurrency option, reusable by development tools.
+CommandLineContribution threading_command_line_contribution();
+
 //! \brief Logging CLI extended with threading concurrency options.
 class ThreadingCommandLineInterface : public LoggingCommandLineInterface {
   public:
