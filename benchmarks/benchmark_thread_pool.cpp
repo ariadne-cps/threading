@@ -55,6 +55,7 @@ struct Options {
     unsigned cutoff_depth = 0u;
     unsigned samples = 9u;
     unsigned warmups = 0u;
+    Bench::SummaryFields summary_fields = Bench::default_summary_fields();
     std::string mode = "both";
     bool sweep = false;
     bool cutoff_sweep = false;
@@ -264,7 +265,7 @@ double measure_pool(std::string const& mode, Options const& options,
         return recursive_run(scheduler,options.depth,left_tag,options.work,
                              options.cutoff_depth);
     };
-    for (unsigned i=0u; i<=options.warmups; ++i)
+    for (std::uint64_t i=0u; i<=options.warmups; ++i)
         if(run()!=reference)
             throw std::runtime_error("warm-up checksum mismatch");
     if(scheduler.queue_size()!=0u)
@@ -307,7 +308,7 @@ MicroComparison compare_micro(Options const& options,unsigned workers) {
         ThreadPool scheduler(workers);
         auto sequential=[&] { return micro_reference(options.tasks,options.work); };
         auto fork_join=[&] { return micro_run(scheduler,options.tasks,options.work); };
-        for (unsigned i=0u; i<=options.warmups; ++i)
+        for (std::uint64_t i=0u; i<=options.warmups; ++i)
             if(fork_join()!=reference || sequential()!=reference)
                 throw std::runtime_error("micro warm-up checksum mismatch");
         if(scheduler.queue_size()!=0u)
@@ -399,7 +400,7 @@ BreakdownComparison compare_breakdown(Options const& options) {
         std::array<double,breakdown_stage_count> elapsed{};
         for(unsigned stage=0u;stage<breakdown_stage_count;++stage) {
             const auto selected=static_cast<BreakdownStage>(stage);
-            for (unsigned i=0u; i<=options.warmups; ++i)
+            for (std::uint64_t i=0u; i<=options.warmups; ++i)
                 if(breakdown_run(scheduler,options.tasks,options.work,selected)!=reference)
                     throw std::runtime_error("breakdown warm-up checksum mismatch");
             // Verify queues after every stage.
@@ -432,14 +433,12 @@ BreakdownComparison compare_breakdown(Options const& options) {
     return result;
 }
 
-void print_statistics(std::string const& label,Statistics const& values,
-                      std::string const& unit) {
-    LOGGING_PRINTLN(std::left<<std::setw(19)<<label<<std::right
-        <<std::fixed<<std::setprecision(3)
-        <<std::setw(13)<<values.median
-        <<std::setw(13)<<values.minimum
-        <<std::setw(13)<<values.maximum
-        <<std::setw(13)<<values.mad<<"  "<<unit)
+// All timed reports share Benchmarking's configurable statistics and layout.
+Bench::Report make_report(std::string title, Options const& options) {
+    Bench::Report result(std::move(title), options.summary_fields);
+    result.set_dimension_columns({{"Execution"}});
+    result.set_table_options(Bench::TableOptions::ruled());
+    return result;
 }
 
 void report_breakdown(Options const& options) {
@@ -447,24 +446,18 @@ void report_breakdown(Options const& options) {
     constexpr std::array<char const*,breakdown_stage_count> labels={
         "Sequential","Future only","Ticket only","Handle, no group","TaskGroup"
     };
-    LOGGING_PRINTLN(" ")
-    LOGGING_PRINTLN("Workload=breakdown | workers=0 | work="<<options.work
-        <<" | iterations="<<options.tasks<<" | samples="<<options.samples)
-    LOGGING_PRINTLN(std::left<<std::setw(19)<<"Execution"
-        <<std::right<<std::setw(13)<<"Median"
-        <<std::setw(13)<<"Min"
-        <<std::setw(13)<<"Max"
-        <<std::setw(13)<<"MAD"<<"  Unit")
-    LOGGING_PRINTLN(std::string(81u,'-'))
-    for(unsigned stage=0u;stage<breakdown_stage_count;++stage) {
-        print_statistics(labels[stage],values.stats[stage],"ns");
-        LOGGING_PRINTLN("  paired delta vs sequential: "
+    auto report=make_report("Workload=breakdown | workers=0 | work="
+        +std::to_string(options.work)+" | iterations="+std::to_string(options.tasks)
+        +" | samples="+std::to_string(options.samples)+" (ns)",options);
+    for(unsigned stage=0u;stage<breakdown_stage_count;++stage)
+        report.add_row({labels[stage]},values.stats[stage]);
+    report.print();
+    for(unsigned stage=0u;stage<breakdown_stage_count;++stage)
+        LOGGING_PRINTLN(labels[stage]<<" paired delta vs sequential: "
             <<std::fixed<<std::setprecision(1)
             <<values.delta_ns_per_task[stage]<<" ns/iteration")
-    }
     LOGGING_PRINTLN("Stages overlap; differences are NOT additive component costs.")
 }
-
 
 // Paired A/B experiment within the same current TaskHandle implementation.
 // "Callback" reproduces the legacy acquisition *representation* (a
@@ -530,7 +523,7 @@ HandleComparison compare_handles(Options const& options,unsigned workers) {
             return micro_run(scheduler,options.tasks,options.work);
         };
         for(unsigned variant=0u;variant<3u;++variant) {
-            for (unsigned i=0u; i<=options.warmups; ++i)
+            for (std::uint64_t i=0u; i<=options.warmups; ++i)
                 if(run(variant)!=reference)
                     throw std::runtime_error("handle-compare warm-up checksum mismatch");
             if(scheduler.queue_size()!=0u)
@@ -558,19 +551,14 @@ HandleComparison compare_handles(Options const& options,unsigned workers) {
 
 void report_handles(Options const& options,unsigned workers) {
     const auto values=compare_handles(options,workers);
-    LOGGING_PRINTLN(" ")
-    LOGGING_PRINTLN("Workload=handle-compare | workers="<<workers
-        <<" | work="<<options.work<<" | forks="<<options.tasks
-        <<" | samples="<<options.samples)
-    LOGGING_PRINTLN(std::left<<std::setw(19)<<"Execution"
-        <<std::right<<std::setw(13)<<"Median"
-        <<std::setw(13)<<"Min"
-        <<std::setw(13)<<"Max"
-        <<std::setw(13)<<"MAD"<<"  Unit")
-    LOGGING_PRINTLN(std::string(81u,'-'))
-    print_statistics("Callback handle",values.callback,"ns");
-    print_statistics("Direct ticket",values.direct,"ns");
-    print_statistics("TaskGroup",values.group,"ns");
+    auto report=make_report("Workload=handle-compare | workers="
+        +std::to_string(workers)+" | work="+std::to_string(options.work)
+        +" | forks="+std::to_string(options.tasks)
+        +" | samples="+std::to_string(options.samples)+" (ns)",options);
+    report.add_row({"Callback handle"},values.callback);
+    report.add_row({"Direct ticket"},values.direct);
+    report.add_row({"TaskGroup"},values.group);
+    report.print();
     LOGGING_PRINTLN("Paired delta (direct - callback): "
         <<std::fixed<<std::setprecision(1)
         <<values.paired_direct_minus_callback_ns<<" ns/fork")
@@ -579,7 +567,6 @@ void report_handles(Options const& options,unsigned workers) {
         <<values.paired_group_minus_direct_ns<<" ns/fork")
     LOGGING_PRINTLN("Callback uses the current TaskHandle with its legacy callable constructor.")
 }
-
 
 // Untimed ownership diagnostic. Counting (and thread-id checks) modify the
 // race between the submitting thread and workers: do not interpret these
@@ -651,7 +638,7 @@ void report_ownership(Options const& options,unsigned workers) {
     for(unsigned sample=0u;sample<options.samples;++sample) {
         ThreadPool scheduler(workers);
         // Instrumented warm-ups are excluded from diagnostic counts.
-        for (unsigned i=0u; i<=options.warmups; ++i) {
+        for (std::uint64_t i=0u; i<=options.warmups; ++i) {
             (void)ownership_run(scheduler,options.tasks,options.work,false,reference);
             (void)ownership_run(scheduler,options.tasks,options.work,true,reference);
         }
@@ -686,39 +673,29 @@ void report_ownership(Options const& options,unsigned workers) {
 void report(std::string const& mode,Options const& options,unsigned workers) {
     if(mode=="micro") {
         const auto times=compare_micro(options,workers);
-        LOGGING_PRINTLN(" ")
-        LOGGING_PRINTLN("Workload=micro | workers="<<workers
-            <<" | work="<<options.work<<" | forks="<<options.tasks
-            <<" | samples="<<options.samples)
-        LOGGING_PRINTLN(std::left<<std::setw(19)<<"Execution"
-            <<std::right<<std::setw(13)<<"Median"
-            <<std::setw(13)<<"Min"
-            <<std::setw(13)<<"Max"
-            <<std::setw(13)<<"MAD"<<"  Unit")
-        LOGGING_PRINTLN(std::string(81u,'-'))
-        print_statistics("Sequential",times.sequential,"ns");
-        print_statistics("TaskGroup",times.fork_join,"ns");
+        auto report=make_report("Workload=micro | workers="+std::to_string(workers)
+            +" | work="+std::to_string(options.work)
+            +" | forks="+std::to_string(options.tasks)
+            +" | samples="+std::to_string(options.samples)+" (ns)",options);
+        report.add_row({"Sequential"},times.sequential);
+        report.add_row({"TaskGroup"},times.fork_join);
+        report.print();
         LOGGING_PRINTLN("Median paired difference: "<<std::fixed
             <<std::setprecision(1)<<times.paired_delta_ns_per_fork
             <<" ns/fork (TaskGroup - sequential)")
         return;
     }
     auto times=compare(mode,options,workers);
-    LOGGING_PRINTLN(" ")
-    LOGGING_PRINTLN("Workload="<<mode<<" | workers="<<workers
-        <<" | work="<<options.work<<" | samples="<<options.samples
-        <<(mode=="recursive"
-            ? " | cutoff=" + std::to_string(options.cutoff_depth)
-                + " | forks=" + std::to_string(
-                    (1u<<(options.depth-options.cutoff_depth))-1u)
-            : std::string{}))
-    LOGGING_PRINTLN(std::left<<std::setw(19)<<"Scheduler"
-        <<std::right<<std::setw(13)<<"Median"
-        <<std::setw(13)<<"Min"
-        <<std::setw(13)<<"Max"
-        <<std::setw(13)<<"MAD"<<"  Unit")
-    LOGGING_PRINTLN(std::string(81u,'-'))
-    print_statistics("ThreadPool",times,"ns");
+    const std::string config="Workload="+mode+" | workers="+std::to_string(workers)
+        +" | work="+std::to_string(options.work)
+        +" | samples="+std::to_string(options.samples)
+        +(mode=="recursive"
+            ? " | cutoff="+std::to_string(options.cutoff_depth)
+                +" | forks="+std::to_string((1u<<(options.depth-options.cutoff_depth))-1u)
+            : std::string{});
+    auto report=make_report(config+" (ns)",options);
+    report.add_row({"ThreadPool"},times);
+    report.print();
 }
 
 bool has_concurrency_option(List<String> const& arguments) {
@@ -769,6 +746,7 @@ int main(int argc,const char* argv[]) {
             :std::min(4u,std::max(1u,std::thread::hardware_concurrency()));
         manager.set_concurrency(0);
         options.warmups = command_line.warmups();
+        options.summary_fields = command_line.summary_fields();
 
         if(options.sweep && (selected_concurrency || has_work_option(arguments)))
             throw std::invalid_argument(
