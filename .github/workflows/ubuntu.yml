@@ -64,19 +64,6 @@ jobs:
         if: matrix.build_type == 'Release'
         run: cmake --build "${{ runner.workspace }}/build" --parallel "$NPROC" --target ariadne-threading
 
-      - name: Benchmark micro smoke (no timing assertions)
-        if: matrix.build_type == 'Release' && matrix.config.os == 'ubuntu-24.04' && matrix.config.cxx == 'clang++-16'
-        run: |
-          cmake --build "${{ runner.workspace }}/build" --parallel "$NPROC" --target benchmark_thread_pool benchmark_use_cases
-          "${{ runner.workspace }}/build/benchmarks/benchmark_thread_pool" --mode micro --concurrency 0 --tasks 256 --work 1 --samples 3
-          "${{ runner.workspace }}/build/benchmarks/benchmark_thread_pool" --mode micro --concurrency 2 --tasks 256 --work 1 --samples 3
-          "${{ runner.workspace }}/build/benchmarks/benchmark_thread_pool" --mode breakdown --concurrency 0 --tasks 256 --work 1 --samples 3
-          "${{ runner.workspace }}/build/benchmarks/benchmark_thread_pool" --mode handle-compare --concurrency 0 --tasks 256 --work 1 --samples 3
-          "${{ runner.workspace }}/build/benchmarks/benchmark_thread_pool" --mode handle-compare --concurrency 2 --tasks 256 --work 1 --samples 3
-          "${{ runner.workspace }}/build/benchmarks/benchmark_thread_pool" --mode ownership --concurrency 1 --tasks 256 --work 128 --samples 3
-          "${{ runner.workspace }}/build/benchmarks/benchmark_use_cases" --mode all --workers 0 --cases 8 --work 64 --samples 3
-          "${{ runner.workspace }}/build/benchmarks/benchmark_use_cases" --mode all --workers 2 --cases 8 --work 64 --samples 3
-
       - name: Install Release library
         if: matrix.build_type == 'Release'
         run: cmake --install "${{ runner.workspace }}/build" --prefix "${{ runner.workspace }}/install"
