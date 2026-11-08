@@ -20,6 +20,7 @@
 #include "threading/parallel_first.hpp"
 #include "threading/task_graph.hpp"
 #include "threading/thread_manager.hpp"
+#include "ariadne-benchmarking.hpp"
 
 #include <algorithm>
 #include <array>
@@ -37,6 +38,7 @@
 #include <vector>
 
 using namespace Ariadne;
+namespace Bench = Ariadne::Benchmarking;
 
 namespace {
 
@@ -111,93 +113,63 @@ std::uint64_t mix(std::uint64_t x,unsigned rounds) {
 
 constexpr std::uint64_t seed=UINT64_C(0x9e3779b97f4a7c15);
 
-double median(std::vector<double> values) {
-    std::sort(values.begin(),values.end());
-    return values[values.size()/2u];
-}
+using Statistics = Bench::Statistics;
 
-struct Statistics {
-    double median_ms;
-    double min_ms;
-    double max_ms;
-    double mad_ms;
-};
-
-Statistics stats(std::vector<double> const& samples) {
-    if(samples.empty())throw std::runtime_error("empty sample set");
-    const auto middle=median(samples);
-    std::vector<double> deviation;
-    deviation.reserve(samples.size());
-    for(double value:samples) {
-        if(!std::isfinite(value) || value<0.0)
-            throw std::runtime_error("invalid sample duration");
-        deviation.push_back(std::abs(value-middle));
-    }
-    auto extremes=std::minmax_element(samples.begin(),samples.end());
-    return {middle,*extremes.first,*extremes.second,median(deviation)};
+Statistics stats(std::vector<double> const& times) {
+    Bench::Samples samples;
+    for (double value : times) samples.add(value);
+    return Bench::summarize(samples);
 }
 
 template<class F>
 double timed(F&& function) {
-    const auto before=std::chrono::steady_clock::now();
-    function();
-    const auto after=std::chrono::steady_clock::now();
-    return std::chrono::duration<double,std::milli>(after-before).count();
+    return Bench::measure_ns(std::forward<F>(function));
 }
 
+// Report the same paired workloads and speedups with Benchmarking's table engine.
 void print_pair(std::string const& mode,Options const& options,
                 Statistics serial,Statistics parallel,
                 std::size_t graph_nodes=0u) {
-    std::cout << std::fixed << std::setprecision(5)
-              << "mode=" << mode << " workers=" << options.workers
-              << " cases=" << options.cases << " samples=" << options.samples;
-    if(mode=="cdcl")
-        std::cout << " work=" << options.work;
-    else
-        std::cout << " batch_grain=" << options.batch_grain
-                  << " graph_nodes=" << graph_nodes;
-    std::cout << '\n'
-              << "  sequential median/min/max/MAD ms: "
-              << serial.median_ms << '/' << serial.min_ms << '/'
-              << serial.max_ms << '/' << serial.mad_ms << '\n'
-              << "  parallel   median/min/max/MAD ms: "
-              << parallel.median_ms << '/' << parallel.min_ms << '/'
-              << parallel.max_ms << '/' << parallel.mad_ms << '\n';
-    if(parallel.median_ms>0.0)
+    const std::string config = "workers=" + std::to_string(options.workers)
+        + " cases=" + std::to_string(options.cases)
+        + " samples=" + std::to_string(options.samples)
+        + (mode=="cdcl" ? " work=" + std::to_string(options.work)
+                        : " graph_nodes=" + std::to_string(graph_nodes));
+    Bench::Report report(mode + " benchmark (ns)", {
+        Bench::SummaryField::Median, Bench::SummaryField::Minimum,
+        Bench::SummaryField::Maximum, Bench::SummaryField::MAD});
+    report.add(config, "sequential",serial);
+    report.add(config, "parallel",parallel);
+    std::cout << report.table();
+    if(parallel.median>0.0)
         std::cout << "  median ratio sequential/parallel: "
-                  << serial.median_ms/parallel.median_ms << "x\n";
+                  << serial.median/parallel.median << "x\n";
 }
 
-// Report all DNN implementations against the same sequential reference.
-// The graph uses separate stage nodes and ready-queue scheduling; the
-// parallel_for version fuses each group's stages into a single callback.
-// Both perform identical per-sample arithmetic, but may differ in cache
-// locality as well as scheduling overhead.
 void print_dnn_comparison(std::string const& mode,Options const& options,
                           Statistics serial,Statistics graph,Statistics fused,
                           std::size_t graph_nodes,std::size_t groups) {
-    std::cout << std::fixed << std::setprecision(5)
-              << "mode=" << mode << " workers=" << options.workers
-              << " cases=" << options.cases << " samples=" << options.samples
-              << " batch_grain=" << options.batch_grain
-              << " graph_nodes=" << graph_nodes
-              << " groups=" << groups << '\n';
-    auto print_stats=[](char const* label,Statistics result) {
-        std::cout << "  " << label << " median/min/max/MAD ms: "
-                  << result.median_ms << '/' << result.min_ms << '/'
-                  << result.max_ms << '/' << result.mad_ms << '\n';
-    };
-    print_stats("sequential",serial);
-    print_stats("task_graph",graph);
-    print_stats("parallel_for",fused);
-    if(graph.median_ms>0.0)
+    const std::string config = "workers=" + std::to_string(options.workers)
+        + " cases=" + std::to_string(options.cases)
+        + " samples=" + std::to_string(options.samples)
+        + " batch_grain=" + std::to_string(options.batch_grain)
+        + " graph_nodes=" + std::to_string(graph_nodes)
+        + " groups=" + std::to_string(groups);
+    Bench::Report report(mode + " benchmark (ns)", {
+        Bench::SummaryField::Median, Bench::SummaryField::Minimum,
+        Bench::SummaryField::Maximum, Bench::SummaryField::MAD});
+    report.add(config, "sequential",serial);
+    report.add(config, "task_graph",graph);
+    report.add(config, "parallel_for",fused);
+    std::cout << report.table();
+    if(graph.median>0.0)
         std::cout << "  median ratio sequential/task_graph: "
-                  << serial.median_ms/graph.median_ms << "x\n";
-    if(fused.median_ms>0.0) {
+                  << serial.median/graph.median << "x\n";
+    if(fused.median>0.0) {
         std::cout << "  median ratio sequential/parallel_for: "
-                  << serial.median_ms/fused.median_ms << "x\n";
+                  << serial.median/fused.median << "x\n";
         std::cout << "  median ratio task_graph/parallel_for: "
-                  << graph.median_ms/fused.median_ms << "x\n";
+                  << graph.median/fused.median << "x\n";
     }
 }
 

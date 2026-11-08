@@ -64,6 +64,13 @@ jobs:
         if: matrix.build_type == 'Release'
         run: cmake --build "${{ runner.workspace }}/build" --parallel "$NPROC" --target ariadne-threading
 
+      - name: Build and smoke-test benchmarking integration
+        if: matrix.build_type == 'Release'
+        run: |
+          cmake --build "${{ runner.workspace }}/build" --parallel "$NPROC" --target benchmark_thread_pool benchmark_use_cases
+          "${{ runner.workspace }}/build/benchmarks/benchmark_thread_pool" --mode flat --concurrency 0 --tasks 16 --work 2 --samples 3 --warmups 1
+          "${{ runner.workspace }}/build/benchmarks/benchmark_use_cases" --mode cdcl --workers 2 --cases 8 --work 2 --samples 3
+
       - name: Install Release library
         if: matrix.build_type == 'Release'
         run: cmake --install "${{ runner.workspace }}/build" --prefix "${{ runner.workspace }}/install"

@@ -24,6 +24,7 @@
 #include "threading/task_group.hpp"
 #include "threading/thread_manager.hpp"
 #include "threading/threading_command_line_interface.hpp"
+#include "ariadne-benchmarking.hpp"
 #include "logging/logging.hpp"
 
 #include <algorithm>
@@ -43,6 +44,7 @@
 #include <vector>
 
 using namespace Ariadne;
+namespace Bench = Ariadne::Benchmarking;
 
 namespace {
 
@@ -52,6 +54,7 @@ struct Options {
     unsigned depth = 9u;
     unsigned cutoff_depth = 0u;
     unsigned samples = 9u;
+    unsigned warmups = 0u;
     std::string mode = "both";
     bool sweep = false;
     bool cutoff_sweep = false;
@@ -222,40 +225,32 @@ std::uint64_t micro_run(ThreadPool& scheduler,unsigned tasks,unsigned work) {
     return total;
 }
 
+// Time only the operation. Preserve reference checks outside the timed region.
 template<class F>
 double timed_sample(F&& compute,std::uint64_t reference) {
-    const auto start=std::chrono::steady_clock::now();
-    const auto result=compute();
-    const auto finish=std::chrono::steady_clock::now();
-    if(result!=reference)
+    std::uint64_t actual = 0u;
+    const double elapsed_ns = Bench::measure_ns([&] { actual = compute(); });
+    if (actual != reference)
         throw std::runtime_error("checksum mismatch between scheduler and reference");
-    return std::chrono::duration<double,std::milli>(finish-start).count();
+    return elapsed_ns;
 }
 
 double median(std::vector<double> values) {
-    if(values.empty())throw std::runtime_error("empty timing collection");
+    if (values.empty()) throw std::runtime_error("empty timing collection");
     std::sort(values.begin(),values.end());
-    return values[values.size()/2u];
+    return Bench::median_of_sorted(values);
 }
 
-struct Statistics {
-    double median_ms;
-    double minimum_ms;
-    double maximum_ms;
-    double mad_ms;
-};
+using Statistics = Bench::Statistics;
 
 Statistics statistics(std::vector<double> const& values) {
-    if(values.empty())throw std::runtime_error("no benchmark samples");
-    for(double value:values)
-        if(!(std::isfinite(value) && value>0.0))
-            throw std::runtime_error("nonpositive or nonfinite sample");
-    const double middle=median(values);
-    std::vector<double> deviations;
-    deviations.reserve(values.size());
-    for(double value:values)deviations.push_back(std::abs(value-middle));
-    const auto bounds=std::minmax_element(values.begin(),values.end());
-    return {middle,*bounds.first,*bounds.second,median(std::move(deviations))};
+    if (values.empty()) throw std::runtime_error("no benchmark samples");
+    Bench::Samples samples;
+    for (const double value : values) {
+        if (value <= 0.0) throw std::runtime_error("nonpositive timing sample");
+        samples.add(value);
+    }
+    return Bench::summarize(samples);
 }
 
 // Construct exactly one pool at a time, keeping all other pool workers
@@ -269,8 +264,9 @@ double measure_pool(std::string const& mode, Options const& options,
         return recursive_run(scheduler,options.depth,left_tag,options.work,
                              options.cutoff_depth);
     };
-    if(run()!=reference)
-        throw std::runtime_error("warm-up checksum mismatch");
+    for (unsigned i=0u; i<=options.warmups; ++i)
+        if(run()!=reference)
+            throw std::runtime_error("warm-up checksum mismatch");
     if(scheduler.queue_size()!=0u)
         throw std::runtime_error("warm-up left queued tasks");
     const double elapsed=timed_sample(run,reference);
@@ -311,8 +307,9 @@ MicroComparison compare_micro(Options const& options,unsigned workers) {
         ThreadPool scheduler(workers);
         auto sequential=[&] { return micro_reference(options.tasks,options.work); };
         auto fork_join=[&] { return micro_run(scheduler,options.tasks,options.work); };
-        if(fork_join()!=reference || sequential()!=reference)
-            throw std::runtime_error("micro warm-up checksum mismatch");
+        for (unsigned i=0u; i<=options.warmups; ++i)
+            if(fork_join()!=reference || sequential()!=reference)
+                throw std::runtime_error("micro warm-up checksum mismatch");
         if(scheduler.queue_size()!=0u)
             throw std::runtime_error("micro warm-up left queued tasks");
 
@@ -328,7 +325,7 @@ MicroComparison compare_micro(Options const& options,unsigned workers) {
             throw std::runtime_error("micro sample left queued tasks");
         sequential_samples.push_back(sequential_ms);
         fork_samples.push_back(fork_ms);
-        paired_deltas.push_back((fork_ms-sequential_ms)*1.0e6/
+        paired_deltas.push_back((fork_ms-sequential_ms)/
                                 static_cast<double>(options.tasks));
     }
     return {statistics(sequential_samples),statistics(fork_samples),
@@ -402,8 +399,10 @@ BreakdownComparison compare_breakdown(Options const& options) {
         std::array<double,breakdown_stage_count> elapsed{};
         for(unsigned stage=0u;stage<breakdown_stage_count;++stage) {
             const auto selected=static_cast<BreakdownStage>(stage);
-            if(breakdown_run(scheduler,options.tasks,options.work,selected)!=reference)
-                throw std::runtime_error("breakdown warm-up checksum mismatch");
+            for (unsigned i=0u; i<=options.warmups; ++i)
+                if(breakdown_run(scheduler,options.tasks,options.work,selected)!=reference)
+                    throw std::runtime_error("breakdown warm-up checksum mismatch");
+            // Verify queues after every stage.
             if(scheduler.queue_size()!=0u)
                 throw std::runtime_error("breakdown warm-up left queued tasks");
         }
@@ -421,7 +420,7 @@ BreakdownComparison compare_breakdown(Options const& options) {
         for(unsigned stage=0u;stage<breakdown_stage_count;++stage) {
             measurements[stage].push_back(elapsed[stage]);
             deltas[stage].push_back(
-                (elapsed[stage]-elapsed[0])*1.0e6/
+                (elapsed[stage]-elapsed[0])/
                 static_cast<double>(options.tasks));
         }
     }
@@ -437,10 +436,10 @@ void print_statistics(std::string const& label,Statistics const& values,
                       std::string const& unit) {
     LOGGING_PRINTLN(std::left<<std::setw(19)<<label<<std::right
         <<std::fixed<<std::setprecision(3)
-        <<std::setw(13)<<values.median_ms
-        <<std::setw(13)<<values.minimum_ms
-        <<std::setw(13)<<values.maximum_ms
-        <<std::setw(13)<<values.mad_ms<<"  "<<unit)
+        <<std::setw(13)<<values.median
+        <<std::setw(13)<<values.minimum
+        <<std::setw(13)<<values.maximum
+        <<std::setw(13)<<values.mad<<"  "<<unit)
 }
 
 void report_breakdown(Options const& options) {
@@ -458,7 +457,7 @@ void report_breakdown(Options const& options) {
         <<std::setw(13)<<"MAD"<<"  Unit")
     LOGGING_PRINTLN(std::string(81u,'-'))
     for(unsigned stage=0u;stage<breakdown_stage_count;++stage) {
-        print_statistics(labels[stage],values.stats[stage],"ms");
+        print_statistics(labels[stage],values.stats[stage],"ns");
         LOGGING_PRINTLN("  paired delta vs sequential: "
             <<std::fixed<<std::setprecision(1)
             <<values.delta_ns_per_task[stage]<<" ns/iteration")
@@ -531,8 +530,9 @@ HandleComparison compare_handles(Options const& options,unsigned workers) {
             return micro_run(scheduler,options.tasks,options.work);
         };
         for(unsigned variant=0u;variant<3u;++variant) {
-            if(run(variant)!=reference)
-                throw std::runtime_error("handle-compare warm-up checksum mismatch");
+            for (unsigned i=0u; i<=options.warmups; ++i)
+                if(run(variant)!=reference)
+                    throw std::runtime_error("handle-compare warm-up checksum mismatch");
             if(scheduler.queue_size()!=0u)
                 throw std::runtime_error("handle-compare warm-up left queued tasks");
         }
@@ -546,9 +546,9 @@ HandleComparison compare_handles(Options const& options,unsigned workers) {
         }
         for(unsigned variant=0u;variant<3u;++variant)
             elapsed[variant].push_back(times[variant]);
-        direct_deltas.push_back((times[1]-times[0])*1.0e6/
+        direct_deltas.push_back((times[1]-times[0])/
                                static_cast<double>(options.tasks));
-        group_deltas.push_back((times[2]-times[1])*1.0e6/
+        group_deltas.push_back((times[2]-times[1])/
                               static_cast<double>(options.tasks));
     }
     return {statistics(elapsed[0]),statistics(elapsed[1]),
@@ -568,9 +568,9 @@ void report_handles(Options const& options,unsigned workers) {
         <<std::setw(13)<<"Max"
         <<std::setw(13)<<"MAD"<<"  Unit")
     LOGGING_PRINTLN(std::string(81u,'-'))
-    print_statistics("Callback handle",values.callback,"ms");
-    print_statistics("Direct ticket",values.direct,"ms");
-    print_statistics("TaskGroup",values.group,"ms");
+    print_statistics("Callback handle",values.callback,"ns");
+    print_statistics("Direct ticket",values.direct,"ns");
+    print_statistics("TaskGroup",values.group,"ns");
     LOGGING_PRINTLN("Paired delta (direct - callback): "
         <<std::fixed<<std::setprecision(1)
         <<values.paired_direct_minus_callback_ns<<" ns/fork")
@@ -650,9 +650,11 @@ void report_ownership(Options const& options,unsigned workers) {
     LOGGING_PRINTLN("Sample  Callback caller  Callback worker  Direct caller  Direct worker  Delta caller percentage points")
     for(unsigned sample=0u;sample<options.samples;++sample) {
         ThreadPool scheduler(workers);
-        // One instrumented warm-up of each variant, excluded from counts.
-        (void)ownership_run(scheduler,options.tasks,options.work,false,reference);
-        (void)ownership_run(scheduler,options.tasks,options.work,true,reference);
+        // Instrumented warm-ups are excluded from diagnostic counts.
+        for (unsigned i=0u; i<=options.warmups; ++i) {
+            (void)ownership_run(scheduler,options.tasks,options.work,false,reference);
+            (void)ownership_run(scheduler,options.tasks,options.work,true,reference);
+        }
         OwnershipCounts callback{},direct{};
         if(sample%2u==0u) {
             callback=ownership_run(scheduler,options.tasks,options.work,false,reference);
@@ -694,8 +696,8 @@ void report(std::string const& mode,Options const& options,unsigned workers) {
             <<std::setw(13)<<"Max"
             <<std::setw(13)<<"MAD"<<"  Unit")
         LOGGING_PRINTLN(std::string(81u,'-'))
-        print_statistics("Sequential",times.sequential,"ms");
-        print_statistics("TaskGroup",times.fork_join,"ms");
+        print_statistics("Sequential",times.sequential,"ns");
+        print_statistics("TaskGroup",times.fork_join,"ns");
         LOGGING_PRINTLN("Median paired difference: "<<std::fixed
             <<std::setprecision(1)<<times.paired_delta_ns_per_fork
             <<" ns/fork (TaskGroup - sequential)")
@@ -716,7 +718,7 @@ void report(std::string const& mode,Options const& options,unsigned workers) {
         <<std::setw(13)<<"Max"
         <<std::setw(13)<<"MAD"<<"  Unit")
     LOGGING_PRINTLN(std::string(81u,'-'))
-    print_statistics("ThreadPool",times,"ms");
+    print_statistics("ThreadPool",times,"ns");
 }
 
 bool has_concurrency_option(List<String> const& arguments) {
@@ -748,7 +750,8 @@ int main(int argc,const char* argv[]) {
     Logger::instance().configuration().set_verbosity(1u);
     try {
         Options options;
-        ThreadingCommandLineInterface command_line;
+        Bench::CommandLine command_line;
+        command_line.add(threading_command_line_contribution());
         command_line.add(CommandLineContribution(
             "thread-pool-benchmark",benchmark_parsers(options)));
 
@@ -765,6 +768,7 @@ int main(int argc,const char* argv[]) {
             ?static_cast<unsigned>(manager.concurrency())
             :std::min(4u,std::max(1u,std::thread::hardware_concurrency()));
         manager.set_concurrency(0);
+        options.warmups = command_line.warmups();
 
         if(options.sweep && (selected_concurrency || has_work_option(arguments)))
             throw std::invalid_argument(

@@ -1,7 +1,7 @@
 add_executable(benchmark_thread_pool benchmark_thread_pool.cpp)
-target_link_libraries(benchmark_thread_pool PRIVATE ariadne-threading threading)
+target_link_libraries(benchmark_thread_pool PRIVATE ariadne-threading threading ariadne-benchmarking)
 add_dependencies(benchmarks benchmark_thread_pool)
 
 add_executable(benchmark_use_cases benchmark_use_cases.cpp)
-target_link_libraries(benchmark_use_cases PRIVATE ariadne-threading threading)
+target_link_libraries(benchmark_use_cases PRIVATE ariadne-threading threading ariadne-benchmarking)
 add_dependencies(benchmarks benchmark_use_cases)
