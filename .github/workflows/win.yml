@@ -57,6 +57,10 @@ jobs:
         if: matrix.build_type == 'Release'
         run: cmake --build build --parallel --target ariadne-threading
 
+      - name: Build Release benchmarks
+        if: matrix.build_type == 'Release'
+        run: cmake --build build --parallel --target benchmarks
+
       - name: Install Release library
         if: matrix.build_type == 'Release'
         run: cmake --install build --prefix "${{ runner.workspace }}/install"
