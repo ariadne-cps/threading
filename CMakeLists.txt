@@ -22,5 +22,8 @@ require_same_dependency_commit(Build CHAINS
     "build" "logging|build")
 
 find_package(Threads REQUIRED)
+require_same_dependency_commit(Logging CHAINS
+    "logging" "benchmarking|logging")
+
 ariadne_setup_module(threading)
 target_link_libraries(threading INTERFACE Threads::Threads)
