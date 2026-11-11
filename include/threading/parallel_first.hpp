@@ -5,15 +5,19 @@
  *
  ****************************************************************************/
 /*
- *  This file is part of Threading.
- *  Threading is free software: you can redistribute it and/or modify
+ *  This file is part of Ariadne Threading.
+ *  Ariadne Threading is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
  *  the Free Software Foundation, either version 3 of the License, or
  *  (at your option) any later version.
- *  Threading is distributed in the hope that it will be useful,
+ *  Ariadne Threading is distributed in the hope that it will be useful,
  *  but WITHOUT ANY WARRANTY; without even the implied warranty of
  *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  *  GNU General Public License for more details.
+ */
+
+/** @file threading/parallel_first.hpp
+ *  @brief Declarations and utilities for parallel first.
  */
 #ifndef THREADING_PARALLEL_FIRST_HPP
 #define THREADING_PARALLEL_FIRST_HPP

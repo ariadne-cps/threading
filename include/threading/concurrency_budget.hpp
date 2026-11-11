@@ -11,6 +11,10 @@
  * the Free Software Foundation, either version 3 or (at your option)
  * any later version. No warranty is provided.
  */
+
+/** @file threading/concurrency_budget.hpp
+ *  @brief Declarations and utilities for concurrency budget.
+ */
 #ifndef THREADING_CONCURRENCY_BUDGET_HPP
 #define THREADING_CONCURRENCY_BUDGET_HPP
 

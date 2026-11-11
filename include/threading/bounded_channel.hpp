@@ -11,6 +11,10 @@
  * the Free Software Foundation, either version 3 or (at your option)
  * any later version. No warranty is provided.
  */
+
+/** @file threading/bounded_channel.hpp
+ *  @brief Declarations and utilities for bounded channel.
+ */
 #ifndef THREADING_BOUNDED_CHANNEL_HPP
 #define THREADING_BOUNDED_CHANNEL_HPP
 
