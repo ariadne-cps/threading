@@ -89,6 +89,7 @@ class TaskGraph {
              std::stop_token stop={});
 
   private:
+    /** @brief Store one graph action and its dependency bookkeeping. */
     struct Node {
         std::function<void()> action;
         std::vector<TaskId> dependencies;

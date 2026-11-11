@@ -48,6 +48,7 @@ class ScopedRoundingMode {
     explicit ScopedRoundingMode(std::optional<int> mode);
 
     ScopedRoundingMode(ScopedRoundingMode const&)=delete;
+    /** @brief Disallow copy assignment of a rounding guard. */
     ScopedRoundingMode& operator=(ScopedRoundingMode const&)=delete;
 
     /** @brief Restore the original mode on the same thread. */

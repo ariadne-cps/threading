@@ -55,6 +55,7 @@ using Ariadne::List;
 
 const String THREAD_POOL_DEFAULT_NAME = "thr";
 
+/** @brief Signal that a stopped thread pool cannot accept work. */
 class StoppedThreadPoolException : public std::exception { };
 
 //! \brief Shared task scheduler for independent and nested task groups.
@@ -66,6 +67,7 @@ class ThreadPool {
     using TaskQueue=std::list<QueuedTask>;
 
   public:
+    /** @brief Track the identity and state of one enqueued task. */
     struct TaskTicket {
       private:
         friend class ThreadPool;
@@ -77,21 +79,25 @@ class ThreadPool {
     };
     using Ticket=std::shared_ptr<TaskTicket>;
 
+    /** @brief Construct a pool with the selected worker count and dispatch policy. */
     explicit ThreadPool(size_t num_threads,
                         String name=THREAD_POOL_DEFAULT_NAME);
     ThreadPool(ThreadPool const&)=delete;
     ThreadPool& operator=(ThreadPool const&)=delete;
     ThreadPool(ThreadPool&&)=delete;
     ThreadPool& operator=(ThreadPool&&)=delete;
+    /** @brief Stop the scheduler and join workers. */
     ~ThreadPool() noexcept;
 
     template<class F,class... AS>
     auto enqueue(F&& f,AS&&... args) -> future<ResultOf<F(AS...)>>;
 
     String name() const;
+    /** @brief Execute one available task on the calling thread if possible. */
     bool try_run_one_task();
     Ticket enqueue_ticket(VoidFunction task);
     bool try_run_task(Ticket const& ticket);
+    /** @brief Read the number of queued tasks. */
     size_t queue_size() const noexcept;
     size_t num_threads() const;
 
@@ -101,14 +107,17 @@ class ThreadPool {
     void set_num_threads(size_t number);
 
   private:
+    /** @brief Represent a pending callable and its ticket state. */
     struct QueuedTask {
         Ticket ticket;
         VoidFunction function;
     };
+    /** @brief Store tasks belonging to one worker. */
     struct LocalQueue {
         std::mutex mutex;
         TaskQueue tasks;
     };
+    /** @brief Identify the currently executing worker and its owning pool. */
     struct WorkerContext {
         ThreadPool* pool;
         size_t index;

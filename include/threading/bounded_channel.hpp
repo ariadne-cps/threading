@@ -49,23 +49,28 @@ namespace Ariadne {
 template<class T>
 class BoundedChannel {
   public:
+    /** @brief Construct a channel with a positive maximum capacity. */
     explicit BoundedChannel(std::size_t capacity) : _capacity(capacity) {
         if(capacity==0u)
             throw std::invalid_argument("BoundedChannel capacity must be positive");
     }
 
+    /** @brief Disable copying of a channel. */
     BoundedChannel(BoundedChannel const&)=delete;
     BoundedChannel& operator=(BoundedChannel const&)=delete;
     BoundedChannel(BoundedChannel&&)=delete;
+    /** @brief Disable move assignment. */
     BoundedChannel& operator=(BoundedChannel&&)=delete;
 
     std::size_t capacity() const noexcept { return _capacity; }
 
+    /** @brief Read the current buffered message count under synchronization. */
     std::size_t size() const {
         std::lock_guard lock(_mutex);
         return _items.size();
     }
 
+    /** @brief Report whether new sends have been permanently disabled. */
     bool closed() const {
         std::lock_guard lock(_mutex);
         return _closed;
@@ -87,6 +92,7 @@ class BoundedChannel {
     }
 
     template<class U> requires std::constructible_from<T,U&&>
+    /** @brief Try to enqueue a message without blocking. */
     bool try_send(U&& item) {
         bool sent=false;
         {
@@ -118,6 +124,7 @@ class BoundedChannel {
         return sent;
     }
 
+    /** @brief Try to consume one buffered message without blocking. */
     std::optional<T> try_receive() {
         std::optional<T> result;
         bool received=false;

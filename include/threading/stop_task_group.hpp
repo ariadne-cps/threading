@@ -46,9 +46,11 @@ class StopTaskGroup {
   public:
     explicit StopTaskGroup(Scheduler& scheduler) : _group(scheduler) { }
 
+    /** @brief Disallow copying the task group. */
     StopTaskGroup(StopTaskGroup const&) = delete;
     StopTaskGroup& operator=(StopTaskGroup const&) = delete;
     StopTaskGroup(StopTaskGroup&&) = delete;
+    /** @brief Disallow move assignment. */
     StopTaskGroup& operator=(StopTaskGroup&&) = delete;
 
     ~StopTaskGroup() noexcept { (void)_stop_source.request_stop(); }

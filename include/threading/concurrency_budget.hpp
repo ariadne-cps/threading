@@ -47,9 +47,11 @@ class ConcurrencyBudget {
     class Permit {
         friend class ConcurrencyBudget;
       public:
+        /** @brief Disable copying of an owned permit. */
         Permit(Permit const&)=delete;
         Permit& operator=(Permit const&)=delete;
         Permit(Permit&& other) noexcept;
+        /** @brief Transfer ownership and release any previous permit. */
         Permit& operator=(Permit&& other) noexcept;
         ~Permit() noexcept;
         /** @brief Return capacity exactly once; safe on moved-from permits. */
@@ -66,6 +68,7 @@ class ConcurrencyBudget {
     explicit ConcurrencyBudget(std::size_t capacity);
     ConcurrencyBudget(ConcurrencyBudget const&)=delete;
     ConcurrencyBudget& operator=(ConcurrencyBudget const&)=delete;
+    /** @brief Disallow moving a budget with active reservations. */
     ConcurrencyBudget(ConcurrencyBudget&&)=delete;
     ConcurrencyBudget& operator=(ConcurrencyBudget&&)=delete;
 
@@ -84,6 +87,7 @@ class ConcurrencyBudget {
     std::optional<Permit> acquire(std::stop_token stop={});
 
   private:
+    /** @brief Return one permit to the budget and notify a waiter. */
     void _release() noexcept;
 
     const std::size_t _capacity;

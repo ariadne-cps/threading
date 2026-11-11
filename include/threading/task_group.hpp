@@ -55,6 +55,7 @@ namespace Ariadne {
 template<class Scheduler, class Result>
 class TaskHandle {
   public:
+    /** @brief Construct a handle using a future and optional targeted executor. */
     TaskHandle(Scheduler& scheduler, std::shared_future<Result> future,
                std::function<bool()> try_execute = {})
         : _scheduler(&scheduler), _future(std::move(future)),
@@ -124,12 +125,15 @@ class TaskHandle {
 template<class Scheduler>
 class TaskGroup {
   public:
+    /** @brief Construct a task group referencing a scheduler that must outlive it. */
     explicit TaskGroup(Scheduler& scheduler) noexcept : _scheduler(scheduler) { }
     TaskGroup(TaskGroup const&) = delete;
     TaskGroup& operator=(TaskGroup const&) = delete;
+    /** @brief Disallow moving a task group. */
     TaskGroup(TaskGroup&&) = delete;
     TaskGroup& operator=(TaskGroup&&) = delete;
 
+    /** @brief Join pending children without propagating exceptions from the destructor. */
     ~TaskGroup() noexcept {
         try { join(); }
         catch (...) { } // Explicit join() is required to observe exceptions.
