@@ -24,8 +24,10 @@
 
 #include <chrono>
 #include <thread>
-#include "ariadne-testing.hpp"
+
 #include "threading/thread_manager.hpp"
+
+#include "ariadne-testing.hpp"
 
 using namespace Ariadne;
 using namespace std::chrono_literals;
@@ -33,8 +35,8 @@ using namespace std::chrono_literals;
 class TestThreadManager : public Ariadne::Testing::ContextFixture {
   public:
     using ContextFixture::ContextFixture;
-  public:
 
+  public:
     void test_set_concurrency() {
         auto max_concurrency = ThreadManager::instance().maximum_concurrency();
         ThreadManager::instance().set_concurrency(max_concurrency);
@@ -47,24 +49,23 @@ class TestThreadManager : public Ariadne::Testing::ContextFixture {
     void test_run_task_with_one_thread() {
         ThreadManager::instance().set_concurrency(1);
         int a = 10;
-        auto result = ThreadManager::instance().enqueue(std::function<int()>([&a]{ return a * a; })).get();
-        ARIADNE_TESTING_EXPECT_EQUAL(result,100);
+        auto result = ThreadManager::instance().enqueue(std::function<int()>([&a] { return a * a; })).get();
+        ARIADNE_TESTING_EXPECT_EQUAL(result, 100);
     }
 
     void test_run_task_with_multiple_threads() {
         ThreadManager::instance().set_concurrency(ThreadManager::instance().maximum_concurrency());
         int a = 10;
-        auto result = ThreadManager::instance().enqueue(std::function<int()>([&a]{ return a * a; })).get();
-        ARIADNE_TESTING_EXPECT_EQUAL(result,100);
+        auto result = ThreadManager::instance().enqueue(std::function<int()>([&a] { return a * a; })).get();
+        ARIADNE_TESTING_EXPECT_EQUAL(result, 100);
     }
 
     void test_run_task_with_no_threads() {
         ThreadManager::instance().set_concurrency(0);
         int a = 10;
-        auto result = ThreadManager::instance().enqueue(std::function<int()>([&a]{ return a * a; })).get();
-        ARIADNE_TESTING_EXPECT_EQUAL(result,100);
+        auto result = ThreadManager::instance().enqueue(std::function<int()>([&a] { return a * a; })).get();
+        ARIADNE_TESTING_EXPECT_EQUAL(result, 100);
     }
-
 
     void test_void_task_with_no_threads() {
         ThreadManager::instance().set_concurrency(0);
@@ -74,51 +75,58 @@ class TestThreadManager : public Ariadne::Testing::ContextFixture {
     }
 
     void test_concurrency_read_during_shrink() {
-        if (ThreadManager::instance().maximum_concurrency() < 2) { ctx().skip("requires at least two hardware threads"); return; }
+        if (ThreadManager::instance().maximum_concurrency() < 2) {
+            ctx().skip("requires at least two hardware threads");
+            return;
+        }
         ThreadManager::instance().set_concurrency(2);
         std::atomic<bool> task_started = false;
         std::atomic<bool> allow_read = false;
         // Return the worker's observation to the owning case thread.
         auto future = ThreadManager::instance().enqueue([&]() -> size_t {
             task_started = true;
-            while (not allow_read.load()) std::this_thread::yield();
+            while (not allow_read.load())
+                std::this_thread::yield();
             return ThreadManager::instance().concurrency();
         });
 
-        ARIADNE_TESTING_EXPECT_ATOMIC(task_started,
-            [](bool started) { return started; },5s);
+        ARIADNE_TESTING_EXPECT_ATOMIC(task_started, [](bool started) { return started; }, 5s);
 
-        auto shrink = std::async(std::launch::async,[] {
+        auto shrink = std::async(std::launch::async, [] {
             ThreadManager::instance().set_concurrency(1);
         });
 
-        while (ThreadManager::instance().concurrency() != 1) std::this_thread::yield();
+        while (ThreadManager::instance().concurrency() != 1)
+            std::this_thread::yield();
         allow_read = true;
-        ARIADNE_TESTING_EXPECT_READY(future,5s);
+        ARIADNE_TESTING_EXPECT_READY(future, 5s);
         const auto observed_concurrency = future.get();
-        ARIADNE_TESTING_EXPECT_EQUAL(observed_concurrency,size_t{1});
+        ARIADNE_TESTING_EXPECT_EQUAL(observed_concurrency, size_t{1});
         shrink.get();
         ThreadManager::instance().set_concurrency(0);
     }
 
-
     void test_thread_registry_during_shrink_to_zero() {
-        if (ThreadManager::instance().maximum_concurrency() == 0) { ctx().skip("requires at least one hardware thread"); return; }
+        if (ThreadManager::instance().maximum_concurrency() == 0) {
+            ctx().skip("requires at least one hardware thread");
+            return;
+        }
         ThreadManager::instance().set_concurrency(1);
         std::atomic<bool> task_started = false;
         std::atomic<bool> allow_finish = false;
 
         auto future = ThreadManager::instance().enqueue(VoidFunction([&] {
             task_started = true;
-            while (not allow_finish.load()) std::this_thread::yield();
+            while (not allow_finish.load())
+                std::this_thread::yield();
         }));
-        ARIADNE_TESTING_EXPECT_ATOMIC(task_started,
-            [](bool started) { return started; },5s);
+        ARIADNE_TESTING_EXPECT_ATOMIC(task_started, [](bool started) { return started; }, 5s);
 
-        auto shrink = std::async(std::launch::async,[] {
+        auto shrink = std::async(std::launch::async, [] {
             ThreadManager::instance().set_concurrency(0);
         });
-        while (ThreadManager::instance().concurrency() != 0) std::this_thread::yield();
+        while (ThreadManager::instance().concurrency() != 0)
+            std::this_thread::yield();
 
         ARIADNE_TESTING_PROVE(ThreadManager::instance().has_threads_registered());
         allow_finish = true;
@@ -127,25 +135,27 @@ class TestThreadManager : public Ariadne::Testing::ContextFixture {
         ARIADNE_TESTING_PROVE(not ThreadManager::instance().has_threads_registered());
     }
 
-
     void test_worker_cannot_shrink_manager() {
-        if (ThreadManager::instance().maximum_concurrency() == 0) { ctx().skip("requires at least one hardware thread"); return; }
+        if (ThreadManager::instance().maximum_concurrency() == 0) {
+            ctx().skip("requires at least one hardware thread");
+            return;
+        }
         ThreadManager::instance().set_concurrency(1);
         auto future = ThreadManager::instance().enqueue(VoidFunction([] {
             ThreadManager::instance().set_concurrency(0);
         }));
         ARIADNE_TESTING_EXPECT_EXCEPTION(future.get());
-        ARIADNE_TESTING_EXPECT_EQUAL(ThreadManager::instance().concurrency(),1);
+        ARIADNE_TESTING_EXPECT_EQUAL(ThreadManager::instance().concurrency(), 1);
         ThreadManager::instance().set_concurrency(0);
     }
 
     void test_cooperative_manager_task_acquisition() {
-        auto& manager=ThreadManager::instance();
+        auto& manager = ThreadManager::instance();
         manager.set_concurrency(0);
         ARIADNE_TESTING_PROVE(!manager.try_run_one_task());
         ARIADNE_TESTING_PROVE(!manager.try_run_task(ThreadPool::Ticket{}));
 
-        if(manager.maximum_concurrency()==0) {
+        if (manager.maximum_concurrency() == 0) {
             ctx().skip("requires at least one hardware thread");
             return;
         }
@@ -153,33 +163,38 @@ class TestThreadManager : public Ariadne::Testing::ContextFixture {
         // Hold the sole worker busy so both pending tickets must be
         // acquired by the calling thread, not raced by the worker.
         std::promise<void> release_worker;
-        auto release_signal=release_worker.get_future().share();
+        auto release_signal = release_worker.get_future().share();
         std::atomic<bool> worker_started{false};
         manager.set_concurrency(1);
         struct Cleanup {
             ThreadManager& manager;
             std::promise<void>& release;
             ~Cleanup() {
-                try { release.set_value(); } catch (...) { }
-                try { manager.set_concurrency(0); } catch (...) { }
+                try {
+                    release.set_value();
+                } catch (...) {
+                }
+                try {
+                    manager.set_concurrency(0);
+                } catch (...) {
+                }
             }
-        } cleanup{manager,release_worker};
-        auto parked=manager.enqueue([&] {
+        } cleanup{manager, release_worker};
+        auto parked = manager.enqueue([&] {
             worker_started.store(true);
             release_signal.wait();
         });
-        ARIADNE_TESTING_EXPECT_ATOMIC(worker_started,
-            [](bool value) { return value; },5s);
+        ARIADNE_TESTING_EXPECT_ATOMIC(worker_started, [](bool value) { return value; }, 5s);
 
         std::atomic<unsigned> executions{0u};
-        auto targeted=manager.enqueue_ticket([&] { ++executions; });
-        auto generic=manager.enqueue_ticket([&] { ++executions; });
+        auto targeted = manager.enqueue_ticket([&] { ++executions; });
+        auto generic = manager.enqueue_ticket([&] { ++executions; });
         ARIADNE_TESTING_PROVE(manager.try_run_task(targeted));
         ARIADNE_TESTING_PROVE(!manager.try_run_task(targeted));
         ARIADNE_TESTING_PROVE(manager.try_run_one_task());
         ARIADNE_TESTING_PROVE(!manager.try_run_task(generic));
         ARIADNE_TESTING_PROVE(!manager.try_run_one_task());
-        ARIADNE_TESTING_EXPECT_EQUAL(executions.load(),2u);
+        ARIADNE_TESTING_EXPECT_EQUAL(executions.load(), 2u);
 
         release_worker.set_value();
         parked.get();
@@ -198,7 +213,6 @@ class TestThreadManager : public Ariadne::Testing::ContextFixture {
         ARIADNE_TESTING_EXPECT_NO_THROW(ThreadManager::instance().set_concurrency(1));
         ARIADNE_TESTING_EXPECT_NO_THROW(ThreadManager::instance().set_concurrency(0));
     }
-
 };
 
 int main(int argc, char** argv) {

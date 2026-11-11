@@ -44,12 +44,12 @@ namespace Ariadne {
 template<class Scheduler>
 class StopTaskGroup {
   public:
-    explicit StopTaskGroup(Scheduler& scheduler) : _group(scheduler) { }
+    explicit StopTaskGroup(Scheduler& scheduler) : _group(scheduler) {}
 
     /** @brief Disallow copying the task group. */
-    StopTaskGroup(StopTaskGroup const&) = delete;
+    StopTaskGroup(const StopTaskGroup&) = delete;
     /** @brief Disallow copy assignment. */
-    StopTaskGroup& operator=(StopTaskGroup const&) = delete;
+    StopTaskGroup& operator=(const StopTaskGroup&) = delete;
     /** @brief Disallow moving a task group. */
     StopTaskGroup(StopTaskGroup&&) = delete;
     /** @brief Disallow move assignment. */
@@ -74,10 +74,10 @@ class StopTaskGroup {
     //! Submit one job accepting a std::stop_token. Return a normal TaskHandle.
     template<class F>
     auto fork(F&& function) {
-        auto token=get_stop_token();
-        return _group.fork([function=std::forward<F>(function),token]() mutable
-                -> std::invoke_result_t<std::decay_t<F>&,std::stop_token> {
-            return std::invoke(function,token);
+        auto token = get_stop_token();
+        return _group.fork([function = std::forward<F>(function), token]() mutable
+                               -> std::invoke_result_t<std::decay_t<F>&, std::stop_token> {
+            return std::invoke(function, token);
         });
     }
 

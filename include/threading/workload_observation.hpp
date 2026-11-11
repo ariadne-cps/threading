@@ -37,24 +37,23 @@ namespace Ariadne {
 //! Dynamic workloads may increase total() after the snapshot was captured.
 //! Completed does not imply that the task succeeded.
 struct WorkloadSnapshot {
-    std::size_t waiting=0u;
-    std::size_t processing=0u;
-    std::size_t completed=0u;
+    std::size_t waiting = 0u;
+    std::size_t processing = 0u;
+    std::size_t completed = 0u;
 
     /** @brief Return the total number of waiting, processing and completed items. */
     std::size_t total() const noexcept {
-        return waiting+processing+completed;
+        return waiting + processing + completed;
     }
 
     double completion_rate() const noexcept {
-        const auto count=total();
-        return count==0u ? 1.0 : static_cast<double>(completed) /
-                                   static_cast<double>(count);
+        const auto count = total();
+        return count == 0u ? 1.0 : static_cast<double>(completed) / static_cast<double>(count);
     }
 
     /** @brief Report whether any work remains outstanding. */
     bool has_finished() const noexcept {
-        return waiting==0u && processing==0u;
+        return waiting == 0u && processing == 0u;
     }
 };
 

@@ -46,44 +46,47 @@ namespace Ariadne {
 //! result was published earlier. Exceptions still propagate after join.
 //! Zero max_lanes uses up to pool.num_threads()+1 lanes (caller included).
 template<class F>
-auto parallel_first_result(ThreadPool& scheduler,std::size_t candidates,
-                           F&& fn,std::size_t max_lanes=0u,
-                           std::stop_token external_stop={})
-    -> std::invoke_result_t<F&,std::size_t,std::stop_token> {
-    using Optional=std::invoke_result_t<F&,std::size_t,std::stop_token>;
-    static_assert(std::is_same_v<Optional,std::optional<typename Optional::value_type>>,
+auto parallel_first_result(ThreadPool& scheduler, std::size_t candidates,
+                           F&& fn, std::size_t max_lanes = 0u,
+                           std::stop_token external_stop = {})
+    -> std::invoke_result_t<F&, std::size_t, std::stop_token> {
+    using Optional = std::invoke_result_t<F&, std::size_t, std::stop_token>;
+    static_assert(std::is_same_v<Optional, std::optional<typename Optional::value_type>>,
                   "parallel_first_result requires std::optional<T>");
-    using T=typename Optional::value_type;
+    using T = typename Optional::value_type;
 
     std::optional<T> winner;
-    if(candidates==0u || external_stop.stop_requested())return winner;
+    if (candidates == 0u || external_stop.stop_requested())
+        return winner;
 
-    const auto available=scheduler.num_threads()+1u;
-    const auto lanes=std::min(candidates,
-        max_lanes==0u ? available : std::min(max_lanes,available));
+    const auto available = scheduler.num_threads() + 1u;
+    const auto lanes = std::min(candidates,
+                                max_lanes == 0u ? available : std::min(max_lanes, available));
     std::stop_source stop;
-    std::stop_callback propagate(external_stop,[&] {
+    std::stop_callback propagate(external_stop, [&] {
         stop.request_stop();
     });
     std::atomic<std::size_t> next{0u};
     std::mutex publish_mutex;
 
-    auto run_lane=[&](std::size_t) {
+    auto run_lane = [&](std::size_t) {
         try {
-            while(!stop.stop_requested()) {
-                const auto index=next.fetch_add(1u,std::memory_order_relaxed);
-                if(index>=candidates)break;
-                Optional value=std::invoke(fn,index,stop.get_token());
-                if(value) {
-                    bool published=false;
+            while (!stop.stop_requested()) {
+                const auto index = next.fetch_add(1u, std::memory_order_relaxed);
+                if (index >= candidates)
+                    break;
+                Optional value = std::invoke(fn, index, stop.get_token());
+                if (value) {
+                    bool published = false;
                     {
                         std::lock_guard lock(publish_mutex);
-                        if(!winner && !stop.stop_requested()) {
+                        if (!winner && !stop.stop_requested()) {
                             winner.emplace(std::move(*value));
-                            published=true;
+                            published = true;
                         }
                     }
-                    if(published)stop.request_stop();
+                    if (published)
+                        stop.request_stop();
                     break;
                 }
             }
@@ -92,7 +95,7 @@ auto parallel_first_result(ThreadPool& scheduler,std::size_t candidates,
             throw;
         }
     };
-    parallel_detail::execute_lanes(scheduler,lanes,run_lane);
+    parallel_detail::execute_lanes(scheduler, lanes, run_lane);
     return winner;
 }
 

@@ -29,23 +29,23 @@
 #ifndef THREADING_USING_HPP
 #define THREADING_USING_HPP
 
-#include <utility>
-#include <mutex>
 #include <condition_variable>
 #include <future>
+#include <mutex>
 #include <thread>
+#include <utility>
 
 namespace Ariadne {
 
-using std::future;
-using std::promise;
-using std::unique_lock;
-using std::lock_guard;
 using std::condition_variable;
-using std::packaged_task;
+using std::future;
+using std::lock_guard;
 using std::mutex;
+using std::packaged_task;
+using std::promise;
 using std::shared_ptr;
 using std::thread;
+using std::unique_lock;
 
 } // namespace Ariadne
 

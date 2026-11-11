@@ -22,17 +22,18 @@
  *  along with Ariadne Threading. If not, see <https://www.gnu.org/licenses/>.
  */
 
-#include "ariadne-testing.hpp"
-#include "threading/task_group.hpp"
-
 #include <atomic>
 #include <chrono>
 #include <functional>
-#include <memory>
 #include <future>
+#include <memory>
 #include <stdexcept>
 #include <thread>
 #include <vector>
+
+#include "threading/task_group.hpp"
+
+#include "ariadne-testing.hpp"
 
 using namespace Ariadne;
 
@@ -44,24 +45,24 @@ class ThrowingTicketScheduler {
     struct Ticket {
         ThreadPool::Ticket underlying;
         bool* throw_on_copy;
-        unsigned copies=0u;
+        unsigned copies = 0u;
 
-        Ticket(ThreadPool::Ticket value,bool& should_throw)
-            : underlying(std::move(value)),throw_on_copy(&should_throw) { }
+        Ticket(ThreadPool::Ticket value, bool& should_throw)
+            : underlying(std::move(value)), throw_on_copy(&should_throw) {}
 
-        Ticket(Ticket const& other)
-            : underlying(other.underlying),throw_on_copy(other.throw_on_copy),
-              copies(other.copies+1u) {
-            if(*throw_on_copy && other.copies==1u)
+        Ticket(const Ticket& other)
+            : underlying(other.underlying), throw_on_copy(other.throw_on_copy),
+              copies(other.copies + 1u) {
+            if (*throw_on_copy && other.copies == 1u)
                 throw std::runtime_error("ticket callback copy failed");
         }
 
-        Ticket(Ticket&&)=default;
+        Ticket(Ticket&&) = default;
     };
 
-    explicit ThrowingTicketScheduler(ThreadPool& pool) : _pool(pool) { }
+    explicit ThrowingTicketScheduler(ThreadPool& pool) : _pool(pool) {}
 
-    bool throw_on_copy=true;
+    bool throw_on_copy = true;
 
     template<class F>
     Ticket enqueue_ticket(F&& task) {
@@ -69,7 +70,7 @@ class ThrowingTicketScheduler {
                       throw_on_copy);
     }
 
-    bool try_run_task(Ticket const& ticket) {
+    bool try_run_task(const Ticket& ticket) {
         return _pool.try_run_task(ticket.underlying);
     }
 
@@ -87,44 +88,46 @@ class TestTaskGroup : public Ariadne::Testing::ContextFixture {
         ThreadPool pool(0);
         TaskGroup group(pool);
         auto result = group.fork([] { return 21; });
-        ARIADNE_TESTING_EXPECT_EQUAL(result.get(),21);
+        ARIADNE_TESTING_EXPECT_EQUAL(result.get(), 21);
         group.join();
         // Targeted acquisition removes the actual queue entry.
-        ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
+        ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(), size_t{0});
     }
 
     void test_nested_single_worker_fork_join() {
         ThreadPool pool(1);
         std::function<int(unsigned)> compute;
         compute = [&](unsigned depth) -> int {
-            if (depth == 0) return 1;
+            if (depth == 0)
+                return 1;
             TaskGroup group(pool);
-            auto first = group.fork([&compute,depth] { return compute(depth-1); });
-            auto other = compute(depth-1);
-            auto total = first.get()+other;
+            auto first = group.fork([&compute, depth] { return compute(depth - 1); });
+            auto other = compute(depth - 1);
+            auto total = first.get() + other;
             group.join();
             return total;
         };
         // A blocking future.get() in the only worker would deadlock here.
-        ARIADNE_TESTING_EXPECT_EQUAL(compute(5),32);
+        ARIADNE_TESTING_EXPECT_EQUAL(compute(5), 32);
     }
 
     void test_deep_recursive_fork_join() {
         // The targeted fork/join wait must not build a stack of unrelated
         // subtrees. Previously some schedulers crashed around depth 14.
-        for (unsigned workers : {0u,1u,4u}) {
+        for (unsigned workers: {0u, 1u, 4u}) {
             ThreadPool pool(workers);
             std::function<int(unsigned)> compute;
             compute = [&](unsigned depth) -> int {
-                if (depth == 0u) return 1;
+                if (depth == 0u)
+                    return 1;
                 TaskGroup group(pool);
-                auto first = group.fork([&compute,depth] { return compute(depth-1u); });
-                int other = compute(depth-1u);
-                const int result = first.get()+other;
+                auto first = group.fork([&compute, depth] { return compute(depth - 1u); });
+                int other = compute(depth - 1u);
+                const int result = first.get() + other;
                 group.join();
                 return result;
             };
-            ARIADNE_TESTING_EXPECT_EQUAL(compute(14u),16384);
+            ARIADNE_TESTING_EXPECT_EQUAL(compute(14u), 16384);
         }
     }
 
@@ -134,14 +137,15 @@ class TestTaskGroup : public Ariadne::Testing::ContextFixture {
         TaskGroup group(pool);
         auto work = [&] {
             active.fetch_add(1);
-            while (active.load() < 2) std::this_thread::yield();
+            while (active.load() < 2)
+                std::this_thread::yield();
             return 1;
         };
         auto first = group.fork(work);
         auto second = group.fork(work);
-        ARIADNE_TESTING_EXPECT_EQUAL(first.get()+second.get(),2);
+        ARIADNE_TESTING_EXPECT_EQUAL(first.get() + second.get(), 2);
         group.join();
-        ARIADNE_TESTING_EXPECT_EQUAL(active.load(),2);
+        ARIADNE_TESTING_EXPECT_EQUAL(active.load(), 2);
     }
 
     void test_join_drains_after_exception() {
@@ -151,19 +155,19 @@ class TestTaskGroup : public Ariadne::Testing::ContextFixture {
         group.fork([&] { ++finished; throw std::runtime_error("expected"); });
         group.fork([&] { ++finished; });
         ARIADNE_TESTING_EXPECT_EXCEPTION(group.join());
-        ARIADNE_TESTING_EXPECT_EQUAL(finished.load(),2);
+        ARIADNE_TESTING_EXPECT_EQUAL(finished.load(), 2);
     }
 
     void test_one_child_repeated_join_and_refork() {
         ThreadPool pool(0);
         TaskGroup group(pool);
-        for(int i=0;i<16;++i) {
-            auto handle=group.fork([i] { return i*i; });
-            ARIADNE_TESTING_EXPECT_EQUAL(handle.get(),i*i);
+        for (int i = 0; i < 16; ++i) {
+            auto handle = group.fork([i] { return i * i; });
+            ARIADNE_TESTING_EXPECT_EQUAL(handle.get(), i * i);
             group.join();
             // Re-joining an empty group must not repeat the task.
             group.join();
-            ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
+            ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(), size_t{0});
         }
     }
 
@@ -179,20 +183,20 @@ class TestTaskGroup : public Ariadne::Testing::ContextFixture {
             ++completed;
             throw std::runtime_error("second");
         });
-        auto last=group.fork([&completed] {
+        auto last = group.fork([&completed] {
             ++completed;
             return 99;
         });
-        bool first_observed=false;
+        bool first_observed = false;
         try {
             group.join();
-        } catch (std::runtime_error const& error) {
-            first_observed=std::string(error.what())=="first";
+        } catch (const std::runtime_error& error) {
+            first_observed = std::string(error.what()) == "first";
         }
         ARIADNE_TESTING_PROVE(first_observed);
-        ARIADNE_TESTING_EXPECT_EQUAL(completed.load(),3);
-        ARIADNE_TESTING_EXPECT_EQUAL(last.get(),99);
-        ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
+        ARIADNE_TESTING_EXPECT_EQUAL(completed.load(), 3);
+        ARIADNE_TESTING_EXPECT_EQUAL(last.get(), 99);
+        ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(), size_t{0});
         // Joining after an exception must be a no-op.
         group.join();
 
@@ -200,7 +204,7 @@ class TestTaskGroup : public Ariadne::Testing::ContextFixture {
         // must retain the later exception and still drain every task.
         TaskGroup later_failure(pool);
         std::atomic<unsigned> later_completed{0u};
-        auto first_success=later_failure.fork([&] {
+        auto first_success = later_failure.fork([&] {
             ++later_completed;
             return 41;
         });
@@ -208,21 +212,21 @@ class TestTaskGroup : public Ariadne::Testing::ContextFixture {
             ++later_completed;
             throw std::runtime_error("later");
         });
-        auto final_success=later_failure.fork([&] {
+        auto final_success = later_failure.fork([&] {
             ++later_completed;
             return 43;
         });
-        bool later_observed=false;
+        bool later_observed = false;
         try {
             later_failure.join();
-        } catch (std::runtime_error const& error) {
-            later_observed=std::string(error.what())=="later";
+        } catch (const std::runtime_error& error) {
+            later_observed = std::string(error.what()) == "later";
         }
         ARIADNE_TESTING_PROVE(later_observed);
-        ARIADNE_TESTING_EXPECT_EQUAL(later_completed.load(),3u);
-        ARIADNE_TESTING_EXPECT_EQUAL(first_success.get(),41);
-        ARIADNE_TESTING_EXPECT_EQUAL(final_success.get(),43);
-        ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
+        ARIADNE_TESTING_EXPECT_EQUAL(later_completed.load(), 3u);
+        ARIADNE_TESTING_EXPECT_EQUAL(first_success.get(), 41);
+        ARIADNE_TESTING_EXPECT_EQUAL(final_success.get(), 43);
+        ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(), size_t{0});
         later_failure.join();
     }
 
@@ -231,11 +235,11 @@ class TestTaskGroup : public Ariadne::Testing::ContextFixture {
         std::atomic<int> completed{0};
         {
             TaskGroup group(pool);
-            for(int i=0;i<4;++i)
+            for (int i = 0; i < 4; ++i)
                 group.fork([&completed] { ++completed; });
         }
-        ARIADNE_TESTING_EXPECT_EQUAL(completed.load(),4);
-        ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
+        ARIADNE_TESTING_EXPECT_EQUAL(completed.load(), 4);
+        ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(), size_t{0});
     }
 
     void test_ticket_queue_churn() {
@@ -243,34 +247,34 @@ class TestTaskGroup : public Ariadne::Testing::ContextFixture {
         std::atomic<int> executed{0};
         std::vector<ThreadPool::Ticket> tickets;
         tickets.reserve(1024);
-        for (size_t i=0;i<1024;++i) {
+        for (size_t i = 0; i < 1024; ++i) {
             tickets.push_back(pool.enqueue_ticket([&executed] { ++executed; }));
         }
         // Remove alternating tickets out of FIFO order, forcing iterator
         // maintenance while other tickets remain in the queue.
-        for (size_t i=1;i<tickets.size();i+=2)
+        for (size_t i = 1; i < tickets.size(); i += 2)
             ARIADNE_TESTING_PROVE(pool.try_run_task(tickets[i]));
-        for (size_t i=0;i<tickets.size();i+=2)
+        for (size_t i = 0; i < tickets.size(); i += 2)
             ARIADNE_TESTING_PROVE(pool.try_run_task(tickets[i]));
-        ARIADNE_TESTING_EXPECT_EQUAL(executed.load(),1024);
-        ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
-        for (ThreadPool::Ticket const& ticket : tickets)
+        ARIADNE_TESTING_EXPECT_EQUAL(executed.load(), 1024);
+        ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(), size_t{0});
+        for (const ThreadPool::Ticket& ticket: tickets)
             ARIADNE_TESTING_PROVE(!pool.try_run_task(ticket));
     }
 
     void test_ticket_acquisition_race() {
         ThreadPool pool(2);
         std::atomic<int> executions{0};
-        for (unsigned i=0; i<256; ++i) {
+        for (unsigned i = 0; i < 256; ++i) {
             TaskGroup group(pool);
-            auto child=group.fork([&executions] {
-                return executions.fetch_add(1)+1;
+            auto child = group.fork([&executions] {
+                return executions.fetch_add(1) + 1;
             });
-            ARIADNE_TESTING_EXPECT_EQUAL(child.get(),static_cast<int>(i+1));
+            ARIADNE_TESTING_EXPECT_EQUAL(child.get(), static_cast<int>(i + 1));
             group.join();
         }
-        ARIADNE_TESTING_EXPECT_EQUAL(executions.load(),256);
-        ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
+        ARIADNE_TESTING_EXPECT_EQUAL(executions.load(), 256);
+        ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(), size_t{0});
     }
 
     void test_destructor_joins() {
@@ -295,8 +299,8 @@ class TestTaskGroup : public Ariadne::Testing::ContextFixture {
                 throw std::runtime_error("expected implicit join failure");
             });
         }
-        ARIADNE_TESTING_EXPECT_EQUAL(executed.load(),1u);
-        ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
+        ARIADNE_TESTING_EXPECT_EQUAL(executed.load(), 1u);
+        ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(), size_t{0});
     }
 
     void test_failed_handle_construction_drains_started_child() {
@@ -304,41 +308,41 @@ class TestTaskGroup : public Ariadne::Testing::ContextFixture {
         ThrowingTicketScheduler scheduler(pool);
         TaskGroup<ThrowingTicketScheduler> group(scheduler);
         std::atomic<unsigned> completed{0u};
-        bool copy_failed=false;
+        bool copy_failed = false;
         try {
             group.fork([&] {
                 ++completed;
                 return 47;
             });
-        } catch(std::runtime_error const& error) {
-            copy_failed=std::string(error.what())=="ticket callback copy failed";
+        } catch (const std::runtime_error& error) {
+            copy_failed = std::string(error.what()) == "ticket callback copy failed";
         }
         ARIADNE_TESTING_PROVE(copy_failed);
         // fork() must not leave an unregistered task behind after failure.
-        ARIADNE_TESTING_EXPECT_EQUAL(completed.load(),1u);
-        ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
+        ARIADNE_TESTING_EXPECT_EQUAL(completed.load(), 1u);
+        ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(), size_t{0});
         group.join();
 
         // The failed registration must not poison this group. Reuse the
         // exact same scheduler/handle instantiation without a copy failure.
-        scheduler.throw_on_copy=false;
-        auto recovered=group.fork([&] {
+        scheduler.throw_on_copy = false;
+        auto recovered = group.fork([&] {
             ++completed;
             return 53;
         });
-        auto next=group.fork([&] {
+        auto next = group.fork([&] {
             ++completed;
             return 59;
         });
         // The previously failed registration must not corrupt the
         // group's additional-joiner path or suppress either result.
         group.join();
-        ARIADNE_TESTING_EXPECT_EQUAL(recovered.get(),53);
-        ARIADNE_TESTING_EXPECT_EQUAL(next.get(),59);
-        ARIADNE_TESTING_EXPECT_EQUAL(completed.load(),3u);
-        ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
+        ARIADNE_TESTING_EXPECT_EQUAL(recovered.get(), 53);
+        ARIADNE_TESTING_EXPECT_EQUAL(next.get(), 59);
+        ARIADNE_TESTING_EXPECT_EQUAL(completed.load(), 3u);
+        ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(), size_t{0});
         group.join();
-        ARIADNE_TESTING_EXPECT_EQUAL(completed.load(),3u);
+        ARIADNE_TESTING_EXPECT_EQUAL(completed.load(), 3u);
     }
 
     void test_void_handle() {
@@ -348,26 +352,26 @@ class TestTaskGroup : public Ariadne::Testing::ContextFixture {
         auto task = group.fork([&] { ++count; });
         task.get();
         group.join();
-        ARIADNE_TESTING_EXPECT_EQUAL(count.load(),1);
+        ARIADNE_TESTING_EXPECT_EQUAL(count.load(), 1);
     }
 
     void test_explicit_direct_ticket_handle() {
         // Direct handles remain available for experimentation even though
         // TaskGroup uses the callback representation by default.
-        for(unsigned workers : {0u,1u,2u}) {
+        for (unsigned workers: {0u, 1u, 2u}) {
             ThreadPool pool(workers);
             std::atomic<unsigned> count{0u};
-            auto task=std::make_shared<std::packaged_task<int()>>([&count] {
-                count.fetch_add(1u,std::memory_order_relaxed);
+            auto task = std::make_shared<std::packaged_task<int()>>([&count] {
+                count.fetch_add(1u, std::memory_order_relaxed);
                 return 77;
             });
-            auto future=task->get_future().share();
-            auto ticket=pool.enqueue_ticket([task] { (*task)(); });
-            TaskHandle<ThreadPool,int> handle(
-                pool,std::move(future),std::move(ticket));
-            ARIADNE_TESTING_EXPECT_EQUAL(handle.get(),77);
-            ARIADNE_TESTING_EXPECT_EQUAL(count.load(),1u);
-            ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
+            auto future = task->get_future().share();
+            auto ticket = pool.enqueue_ticket([task] { (*task)(); });
+            TaskHandle<ThreadPool, int> handle(
+                pool, std::move(future), std::move(ticket));
+            ARIADNE_TESTING_EXPECT_EQUAL(handle.get(), 77);
+            ARIADNE_TESTING_EXPECT_EQUAL(count.load(), 1u);
+            ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(), size_t{0});
         }
     }
 
@@ -376,12 +380,12 @@ class TestTaskGroup : public Ariadne::Testing::ContextFixture {
         // work while waiting, without requiring a targeted ticket.
         ThreadPool pool(0);
         std::promise<int> promise;
-        auto result=promise.get_future().share();
-        auto worker=pool.enqueue([&promise] { promise.set_value(37); });
-        TaskHandle<ThreadPool,int> handle(pool,std::move(result));
-        ARIADNE_TESTING_EXPECT_EQUAL(handle.get(),37);
+        auto result = promise.get_future().share();
+        auto worker = pool.enqueue([&promise] { promise.set_value(37); });
+        TaskHandle<ThreadPool, int> handle(pool, std::move(result));
+        ARIADNE_TESTING_EXPECT_EQUAL(handle.get(), 37);
         worker.get();
-        ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
+        ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(), size_t{0});
     }
 
     void test_generic_wait_without_pending_scheduler_work() {
@@ -390,30 +394,30 @@ class TestTaskGroup : public Ariadne::Testing::ContextFixture {
         // take the timed-wait path instead of spinning while helping.
         ThreadPool pool(0);
         std::promise<int> promise;
-        TaskHandle<ThreadPool,int> handle(
-            pool,promise.get_future().share());
+        TaskHandle<ThreadPool, int> handle(
+            pool, promise.get_future().share());
         std::jthread producer([&] {
             std::this_thread::sleep_for(std::chrono::milliseconds(30));
             promise.set_value(59);
         });
-        ARIADNE_TESTING_EXPECT_EQUAL(handle.get(),59);
-        ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
+        ARIADNE_TESTING_EXPECT_EQUAL(handle.get(), 59);
+        ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(), size_t{0});
 
         // A targeted ticket can already have completed before its handle
         // waits. In this case wait() must not try to run it a second time.
         std::atomic<unsigned> executions{0u};
-        auto task=std::make_shared<std::packaged_task<int()>>([&] {
+        auto task = std::make_shared<std::packaged_task<int()>>([&] {
             ++executions;
             return 61;
         });
-        auto ready_future=task->get_future().share();
-        auto ticket=pool.enqueue_ticket([task] { (*task)(); });
+        auto ready_future = task->get_future().share();
+        auto ticket = pool.enqueue_ticket([task] { (*task)(); });
         ARIADNE_TESTING_PROVE(pool.try_run_task(ticket));
-        TaskHandle<ThreadPool,int> ready_handle(
-            pool,std::move(ready_future),std::move(ticket));
-        ARIADNE_TESTING_EXPECT_EQUAL(ready_handle.get(),61);
-        ARIADNE_TESTING_EXPECT_EQUAL(executions.load(),1u);
-        ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(),size_t{0});
+        TaskHandle<ThreadPool, int> ready_handle(
+            pool, std::move(ready_future), std::move(ticket));
+        ARIADNE_TESTING_EXPECT_EQUAL(ready_handle.get(), 61);
+        ARIADNE_TESTING_EXPECT_EQUAL(executions.load(), 1u);
+        ARIADNE_TESTING_EXPECT_EQUAL(pool.queue_size(), size_t{0});
     }
 
     void test_thread_manager_sequential_mode() {
@@ -422,9 +426,9 @@ class TestTaskGroup : public Ariadne::Testing::ContextFixture {
         auto calling_thread = std::this_thread::get_id();
         TaskGroup group(manager);
         auto result = group.fork([] { return std::this_thread::get_id(); });
-        ARIADNE_TESTING_PROVE(result.get()==calling_thread);
+        ARIADNE_TESTING_PROVE(result.get() == calling_thread);
         group.join();
-        ARIADNE_TESTING_EXPECT_EQUAL(manager.concurrency(),size_t{0});
+        ARIADNE_TESTING_EXPECT_EQUAL(manager.concurrency(), size_t{0});
     }
 
     void test_thread_manager_worker_mode() {
@@ -445,14 +449,12 @@ class TestTaskGroup : public Ariadne::Testing::ContextFixture {
             });
             // Observe asynchronous start before helping: this guarantees
             // that the task was actually dispatched to a worker.
-            ARIADNE_TESTING_EXPECT_ATOMIC(started,
-                [](bool value) { return value; },std::chrono::seconds(10));
-            ARIADNE_TESTING_PROVE(result.get()!=calling_thread);
+            ARIADNE_TESTING_EXPECT_ATOMIC(started, [](bool value) { return value; }, std::chrono::seconds(10));
+            ARIADNE_TESTING_PROVE(result.get() != calling_thread);
             group.join();
         }
         manager.set_concurrency(0);
     }
-
 };
 
 int main(int argc, char** argv) {

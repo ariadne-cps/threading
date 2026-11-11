@@ -29,16 +29,17 @@
 #ifndef THREADING_BUFFERED_THREAD_HPP
 #define THREADING_BUFFERED_THREAD_HPP
 
-#include <utility>
-#include <thread>
-#include <future>
-#include <mutex>
 #include <atomic>
 #include <functional>
-#include "utility/string.hpp"
-#include "threading/templates.hpp"
+#include <future>
+#include <mutex>
+#include <thread>
+#include <utility>
+
 #include "threading/buffer.hpp"
+#include "threading/templates.hpp"
 #include "threading/using.hpp"
+#include "utility/string.hpp"
 
 namespace Ariadne {
 
@@ -50,7 +51,6 @@ using Ariadne::String;
 //! isolation, not in pool. It is functionally equivalent to a ThreadPool of one Thread only.
 class BufferedThread {
   public:
-
     //! \brief Construct with a name.
     //! \details The thread will start and store the id. The name will be the id if left empty
     BufferedThread(String name = String());
@@ -85,13 +85,13 @@ class BufferedThread {
     future<void> _got_id_future;
 };
 
-template<class F, class... AS> auto BufferedThread::enqueue(F&& f, AS&&... args) -> future<ResultOf<F(AS...)>>
-{
+template<class F, class... AS>
+auto BufferedThread::enqueue(F&& f, AS&&... args) -> future<ResultOf<F(AS...)>> {
     using ReturnType = ResultOf<F(AS...)>;
 
     auto task = std::make_shared<packaged_task<ReturnType()>>(std::bind(std::forward<F>(f), std::forward<AS>(args)...));
     future<ReturnType> result = task->get_future();
-    _task_buffer.push([task](){ (*task)(); });
+    _task_buffer.push([task]() { (*task)(); });
     return result;
 }
 

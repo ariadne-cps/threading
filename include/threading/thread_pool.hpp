@@ -43,20 +43,20 @@
 #include <vector>
 
 #include "logging/logging.hpp"
-#include "utility/container.hpp"
-#include "threading/thread.hpp"
 #include "threading/templates.hpp"
+#include "threading/thread.hpp"
 #include "threading/using.hpp"
+#include "utility/container.hpp"
 
 namespace Ariadne {
 
-using std::make_shared;
 using Ariadne::List;
+using std::make_shared;
 
 const String THREAD_POOL_DEFAULT_NAME = "thr";
 
 /** @brief Signal that a stopped thread pool cannot accept work. */
-class StoppedThreadPoolException : public std::exception { };
+class StoppedThreadPoolException : public std::exception {};
 
 //! \brief Shared task scheduler for independent and nested task groups.
 //! \details Local LIFO queues, FIFO stealing and a global FIFO injection queue.
@@ -64,40 +64,40 @@ class StoppedThreadPoolException : public std::exception { };
 class ThreadPool {
   private:
     struct QueuedTask;
-    using TaskQueue=std::list<QueuedTask>;
+    using TaskQueue = std::list<QueuedTask>;
 
   public:
     /** @brief Track the identity and state of one enqueued task. */
     struct TaskTicket {
       private:
         friend class ThreadPool;
-        ThreadPool* owner=nullptr;
-        TaskQueue* queue=nullptr;
-        std::mutex* queue_mutex=nullptr;
+        ThreadPool* owner = nullptr;
+        TaskQueue* queue = nullptr;
+        std::mutex* queue_mutex = nullptr;
         TaskQueue::iterator position{};
-        bool pending=false;
+        bool pending = false;
     };
-    using Ticket=std::shared_ptr<TaskTicket>;
+    using Ticket = std::shared_ptr<TaskTicket>;
 
     /** @brief Construct a pool with the selected worker count and dispatch policy. */
     explicit ThreadPool(size_t num_threads,
-                        String name=THREAD_POOL_DEFAULT_NAME);
-    ThreadPool(ThreadPool const&)=delete;
-    ThreadPool& operator=(ThreadPool const&)=delete;
-    ThreadPool(ThreadPool&&)=delete;
-    ThreadPool& operator=(ThreadPool&&)=delete;
+                        String name = THREAD_POOL_DEFAULT_NAME);
+    ThreadPool(const ThreadPool&) = delete;
+    ThreadPool& operator=(const ThreadPool&) = delete;
+    ThreadPool(ThreadPool&&) = delete;
+    ThreadPool& operator=(ThreadPool&&) = delete;
     /** @brief Stop the scheduler and join workers. */
     ~ThreadPool() noexcept;
 
-    template<class F,class... AS>
-    auto enqueue(F&& f,AS&&... args) -> future<ResultOf<F(AS...)>>;
+    template<class F, class... AS>
+    auto enqueue(F&& f, AS&&... args) -> future<ResultOf<F(AS...)>>;
 
     String name() const;
     /** @brief Execute one available task on the calling thread if possible. */
     bool try_run_one_task();
     Ticket enqueue_ticket(VoidFunction task);
     /** @brief Try to acquire and run a specific queued task. */
-    bool try_run_task(Ticket const& ticket);
+    bool try_run_task(const Ticket& ticket);
     /** @brief Read the number of queued tasks. */
     size_t queue_size() const noexcept;
     /** @brief Return the number of workers. */
@@ -126,18 +126,18 @@ class ThreadPool {
         unsigned local_picks;
     };
     static thread_local WorkerContext _current;
-    static constexpr size_t no_worker=static_cast<size_t>(-1);
+    static constexpr size_t no_worker = static_cast<size_t>(-1);
 
-    Ticket _enqueue_task(VoidFunction task,bool tracked=false);
+    Ticket _enqueue_task(VoidFunction task, bool tracked = false);
     // Caller holds the queue's mutex.
     /** @brief Remove and claim a queued task. */
-    void _extract(TaskQueue& queue,TaskQueue::iterator it,VoidFunction& task);
+    void _extract(TaskQueue& queue, TaskQueue::iterator it, VoidFunction& task);
     /** @brief Try to acquire work from available queues. */
     bool _take(VoidFunction& task);
     /** @brief Try to acquire work from the global queue. */
     bool _take_global(VoidFunction& task);
     /** @brief Try to acquire work from a local queue or steal it. */
-    bool _take_local(size_t index,VoidFunction& task,bool steal);
+    bool _take_local(size_t index, VoidFunction& task, bool steal);
     /** @brief Run one claimed task and account for its completion. */
     void _execute(VoidFunction task);
     /** @brief Drive one worker's task acquisition loop. */
@@ -146,7 +146,7 @@ class ThreadPool {
     void _finish_activity() noexcept;
 
     const String _name;
-    static constexpr unsigned max_local_picks=8u;
+    static constexpr unsigned max_local_picks = 8u;
     std::vector<std::unique_ptr<LocalQueue>> _locals;
     TaskQueue _global;
     std::mutex _global_mutex;
@@ -159,22 +159,22 @@ class ThreadPool {
     std::atomic<size_t> _desired_workers{0};
     // The upper bit closes external submission; low bits count outstanding
     // tasks, including reservations that are not yet in a queue.
-    static constexpr size_t stopping_bit=size_t{1} << (sizeof(size_t)*8u-1u);
+    static constexpr size_t stopping_bit = size_t{1} << (sizeof(size_t) * 8u - 1u);
     std::atomic<size_t> _activity{0};
     std::atomic<size_t> _epoch{0}; // Atomic wait/notify wake-up generation.
 };
 
-template<class F,class... AS>
-auto ThreadPool::enqueue(F&& f,AS&&... args) -> future<ResultOf<F(AS...)>> {
-    using ReturnType=ResultOf<F(AS...)>;
-    auto task=make_shared<packaged_task<ReturnType()>>(
-        std::bind(std::forward<F>(f),std::forward<AS>(args)...));
-    future<ReturnType> result=task->get_future();
+template<class F, class... AS>
+auto ThreadPool::enqueue(F&& f, AS&&... args) -> future<ResultOf<F(AS...)>> {
+    using ReturnType = ResultOf<F(AS...)>;
+    auto task = make_shared<packaged_task<ReturnType()>>(
+        std::bind(std::forward<F>(f), std::forward<AS>(args)...));
+    future<ReturnType> result = task->get_future();
     _enqueue_task([task] { (*task)(); });
     return result;
 }
 
-String construct_thread_name(String prefix,size_t number,size_t max_number);
+String construct_thread_name(String prefix, size_t number, size_t max_number);
 
 } // namespace Ariadne
 #endif // THREADING_THREAD_POOL_HPP

@@ -22,9 +22,10 @@
  *  along with Ariadne Threading. If not, see <https://www.gnu.org/licenses/>.
  */
 
-#include "utility/macros.hpp"
-#include "logging/logging.hpp"
 #include "threading/thread_manager.hpp"
+
+#include "logging/logging.hpp"
+#include "utility/macros.hpp"
 
 namespace Ariadne {
 
@@ -57,14 +58,14 @@ bool ThreadManager::try_run_one_task() {
 }
 
 ThreadPool::Ticket ThreadManager::enqueue_ticket(VoidFunction task) {
-    if (_concurrency.load()==0) {
+    if (_concurrency.load() == 0) {
         task();
         return {};
     }
     return _pool.enqueue_ticket(std::move(task));
 }
 
-bool ThreadManager::try_run_task(ThreadPool::Ticket const& ticket) {
+bool ThreadManager::try_run_task(const ThreadPool::Ticket& ticket) {
     return _pool.try_run_task(ticket);
 }
 
@@ -105,4 +106,4 @@ void ThreadManager::set_logging_nonblocking_scheduler() const {
     Logger::instance().use_nonblocking_scheduler();
 }
 
-}
+} // namespace Ariadne

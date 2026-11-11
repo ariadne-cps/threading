@@ -31,31 +31,33 @@
 
 #include <algorithm>
 #include <atomic>
+
 #include "logging/logging.hpp"
 #include "logging/thread_registry_interface.hpp"
-#include "threading/thread_pool.hpp"
 #include "threading/templates.hpp"
+#include "threading/thread_pool.hpp"
 
 namespace Ariadne {
 
-using Ariadne::ThreadRegistryInterface;
 using Ariadne::Logger;
+using Ariadne::ThreadRegistryInterface;
 
 //! \brief Manages threads based on concurrency availability.
 class ThreadManager : public ThreadRegistryInterface {
   private:
     ThreadManager();
+
   public:
     /** @brief Disallow copying the singleton manager. */
-    ThreadManager(ThreadManager const&) = delete;
+    ThreadManager(const ThreadManager &) = delete;
     /** @brief Disallow assignment of the singleton manager. */
-    void operator=(ThreadManager const&) = delete;
+    void operator=(const ThreadManager &) = delete;
 
     /** @brief Destroy the manager with its owned scheduler state. */
     virtual ~ThreadManager() = default;
 
     //! \brief The singleton instance of this class
-    static ThreadManager& instance();
+    static ThreadManager &instance();
 
     //! \brief Whether threads have already been registered
     bool has_threads_registered() const override;
@@ -93,12 +95,13 @@ class ThreadManager : public ThreadRegistryInterface {
     ThreadPool::Ticket enqueue_ticket(VoidFunction task);
 
     //! \brief Execute exactly this pending child if still queued.
-    bool try_run_task(ThreadPool::Ticket const& ticket);
+    bool try_run_task(const ThreadPool::Ticket &ticket);
 
     //! \brief Enqueue a task for execution, returning the future handler
     //! \details The is no limits on the number of tasks to enqueue. If concurrency is zero,
     //! then the task is executed sequentially with no threads involved
-    template<class F, class... AS> auto enqueue(F &&f, AS &&... args) -> future<ResultOf<F(AS...)>>;
+    template<class F, class... AS>
+    auto enqueue(F &&f, AS &&...args) -> future<ResultOf<F(AS...)>>;
 
   private:
     const size_t _maximum_concurrency;
@@ -109,7 +112,8 @@ class ThreadManager : public ThreadRegistryInterface {
     ThreadPool _pool;
 };
 
-template<class F, class... AS> auto ThreadManager::enqueue(F &&f, AS &&... args) -> future<ResultOf<F(AS...)>> {
+template<class F, class... AS>
+auto ThreadManager::enqueue(F &&f, AS &&...args) -> future<ResultOf<F(AS...)>> {
     if (_concurrency.load() == 0) {
         using ReturnType = ResultOf<F(AS...)>;
         auto task = packaged_task<ReturnType()>(std::bind(std::forward<F>(f), std::forward<AS>(args)...));
@@ -117,7 +121,7 @@ template<class F, class... AS> auto ThreadManager::enqueue(F &&f, AS &&... args)
         task();
         return result;
     }
-    return _pool.enqueue(std::forward<F>(f),std::forward<AS>(args)...);
+    return _pool.enqueue(std::forward<F>(f), std::forward<AS>(args)...);
 }
 
 } // namespace Ariadne

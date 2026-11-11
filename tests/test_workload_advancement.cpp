@@ -24,46 +24,48 @@
 
 #include <thread>
 #include <vector>
-#include "ariadne-testing.hpp"
+
 #include "threading/workload_advancement.hpp"
+
+#include "ariadne-testing.hpp"
 
 using namespace Ariadne;
 
 class TestWorkloadAdvancement : public Ariadne::Testing::ContextFixture {
   public:
     using ContextFixture::ContextFixture;
-  public:
 
+  public:
     void test_empty_completion_rate() {
         WorkloadAdvancement wp;
-        ARIADNE_TESTING_EXPECT_EQUAL(wp.completion_rate(),1.0);
+        ARIADNE_TESTING_EXPECT_EQUAL(wp.completion_rate(), 1.0);
         ARIADNE_TESTING_PROVE(wp.has_finished());
     }
 
     void test_creation() {
         WorkloadAdvancement wp(5);
-        ARIADNE_TESTING_EXPECT_EQUAL(wp.completion_rate(),0.0);
-        ARIADNE_TESTING_EXPECT_EQUAL(wp.waiting(),5);
-        ARIADNE_TESTING_EXPECT_EQUAL(wp.processing(),0);
-        ARIADNE_TESTING_EXPECT_EQUAL(wp.completed(),0);
-        ARIADNE_TESTING_EXPECT_EQUAL(wp.total(),5);
+        ARIADNE_TESTING_EXPECT_EQUAL(wp.completion_rate(), 0.0);
+        ARIADNE_TESTING_EXPECT_EQUAL(wp.waiting(), 5);
+        ARIADNE_TESTING_EXPECT_EQUAL(wp.processing(), 0);
+        ARIADNE_TESTING_EXPECT_EQUAL(wp.completed(), 0);
+        ARIADNE_TESTING_EXPECT_EQUAL(wp.total(), 5);
         ARIADNE_TESTING_PROVE(not wp.has_finished());
     }
 
     void test_advance() {
         WorkloadAdvancement wp(3);
         wp.add_to_waiting();
-        ARIADNE_TESTING_EXPECT_EQUAL(wp.waiting(),4);
-        ARIADNE_TESTING_EXPECT_EQUAL(wp.total(),4);
+        ARIADNE_TESTING_EXPECT_EQUAL(wp.waiting(), 4);
+        ARIADNE_TESTING_EXPECT_EQUAL(wp.total(), 4);
         wp.add_to_processing();
-        ARIADNE_TESTING_EXPECT_EQUAL(wp.waiting(),3);
-        ARIADNE_TESTING_EXPECT_EQUAL(wp.processing(),1);
-        ARIADNE_TESTING_EXPECT_EQUAL(wp.total(),4);
+        ARIADNE_TESTING_EXPECT_EQUAL(wp.waiting(), 3);
+        ARIADNE_TESTING_EXPECT_EQUAL(wp.processing(), 1);
+        ARIADNE_TESTING_EXPECT_EQUAL(wp.total(), 4);
         wp.add_to_completed();
-        ARIADNE_TESTING_EXPECT_EQUAL(wp.processing(),0);
-        ARIADNE_TESTING_EXPECT_EQUAL(wp.completed(),1);
-        ARIADNE_TESTING_EXPECT_EQUAL(wp.total(),4);
-        ARIADNE_TESTING_EXPECT_EQUAL(wp.completion_rate(),0.25);
+        ARIADNE_TESTING_EXPECT_EQUAL(wp.processing(), 0);
+        ARIADNE_TESTING_EXPECT_EQUAL(wp.completed(), 1);
+        ARIADNE_TESTING_EXPECT_EQUAL(wp.total(), 4);
+        ARIADNE_TESTING_EXPECT_EQUAL(wp.completion_rate(), 0.25);
     }
 
     void test_finished() {
@@ -73,27 +75,27 @@ class TestWorkloadAdvancement : public Ariadne::Testing::ContextFixture {
         ARIADNE_TESTING_PROVE(not wp.has_finished());
         wp.add_to_processing(2);
         wp.add_to_completed(2);
-        ARIADNE_TESTING_EXPECT_EQUAL(wp.completion_rate(),1.0);
+        ARIADNE_TESTING_EXPECT_EQUAL(wp.completion_rate(), 1.0);
         ARIADNE_TESTING_PROVE(wp.has_finished());
     }
-
 
     void test_concurrent_transitions() {
         constexpr size_t count = 128;
         WorkloadAdvancement wp(count);
         std::vector<std::thread> threads;
         threads.reserve(count);
-        for (size_t i=0; i<count; ++i) {
+        for (size_t i = 0; i < count; ++i) {
             threads.emplace_back([&wp] {
                 wp.add_to_processing();
                 wp.add_to_completed();
             });
         }
-        for (auto& thread : threads) thread.join();
-        ARIADNE_TESTING_EXPECT_EQUAL(wp.waiting(),0);
-        ARIADNE_TESTING_EXPECT_EQUAL(wp.processing(),0);
-        ARIADNE_TESTING_EXPECT_EQUAL(wp.completed(),count);
-        ARIADNE_TESTING_EXPECT_EQUAL(wp.completion_rate(),1.0);
+        for (auto& thread: threads)
+            thread.join();
+        ARIADNE_TESTING_EXPECT_EQUAL(wp.waiting(), 0);
+        ARIADNE_TESTING_EXPECT_EQUAL(wp.processing(), 0);
+        ARIADNE_TESTING_EXPECT_EQUAL(wp.completed(), count);
+        ARIADNE_TESTING_EXPECT_EQUAL(wp.completion_rate(), 1.0);
         ARIADNE_TESTING_PROVE(wp.has_finished());
     }
 
@@ -105,10 +107,8 @@ class TestWorkloadAdvancement : public Ariadne::Testing::ContextFixture {
         wp.add_to_processing(2);
         ARIADNE_TESTING_EXPECT_EXCEPTION(wp.add_to_completed(3));
         wp.add_to_completed(1);
-        ARIADNE_TESTING_EXPECT_EQUAL(wp.completion_rate(),0.25);
+        ARIADNE_TESTING_EXPECT_EQUAL(wp.completion_rate(), 0.25);
     }
-
-
 };
 
 int main(int argc, char** argv) {

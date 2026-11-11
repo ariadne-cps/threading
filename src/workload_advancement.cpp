@@ -22,18 +22,19 @@
  *  along with Ariadne Threading. If not, see <https://www.gnu.org/licenses/>.
  */
 
-#include "utility/macros.hpp"
 #include "threading/workload_advancement.hpp"
+
+#include "utility/macros.hpp"
 
 namespace Ariadne {
 
 using std::lock_guard;
 
-WorkloadAdvancement::WorkloadAdvancement(size_t initial) : _num_waiting(initial), _num_processing(0), _num_completed(0) { }
+WorkloadAdvancement::WorkloadAdvancement(size_t initial) : _num_waiting(initial), _num_processing(0), _num_completed(0) {}
 
 WorkloadSnapshot WorkloadAdvancement::snapshot() const {
     lock_guard<mutex> lock(_mux);
-    return {_num_waiting,_num_processing,_num_completed};
+    return {_num_waiting, _num_processing, _num_completed};
 }
 
 size_t WorkloadAdvancement::waiting() const {
@@ -59,21 +60,21 @@ size_t WorkloadAdvancement::total() const {
 void WorkloadAdvancement::add_to_waiting(size_t n) {
     ARIADNE_PRECONDITION(n > 0);
     lock_guard<mutex> lock(_mux);
-    _num_waiting+=n;
+    _num_waiting += n;
 }
 
 void WorkloadAdvancement::add_to_processing(size_t n) {
     lock_guard<mutex> lock(_mux);
     ARIADNE_PRECONDITION(n <= _num_waiting);
-    _num_waiting-=n;
-    _num_processing+=n;
+    _num_waiting -= n;
+    _num_processing += n;
 }
 
 void WorkloadAdvancement::add_to_completed(size_t n) {
     lock_guard<mutex> lock(_mux);
-    ARIADNE_PRECONDITION(n <=_num_processing);
-    _num_processing-=n;
-    _num_completed+=n;
+    ARIADNE_PRECONDITION(n <= _num_processing);
+    _num_processing -= n;
+    _num_completed += n;
 }
 
 double WorkloadAdvancement::completion_rate() const {

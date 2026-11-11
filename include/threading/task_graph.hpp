@@ -42,7 +42,7 @@ namespace Ariadne {
  */
 class TaskGraph {
   public:
-    using TaskId=std::size_t;
+    using TaskId = std::size_t;
 
     /** @brief Add an action and return its stable node identifier.
      *  @tparam F Callable convertible to std::function<void()>.
@@ -55,10 +55,10 @@ class TaskGraph {
     TaskId add_task(F&& fn) {
         // Reject invalid actions before mutating the graph.
         std::function<void()> action(std::forward<F>(fn));
-        if(!action)
+        if (!action)
             throw std::invalid_argument("TaskGraph task cannot be empty");
-        const auto id=_nodes.size();
-        _nodes.push_back(Node{std::move(action),{}});
+        const auto id = _nodes.size();
+        _nodes.push_back(Node{std::move(action), {}});
         return id;
     }
 
@@ -67,7 +67,7 @@ class TaskGraph {
      *  @throws std::invalid_argument for self or duplicate edges.
      *  @note Cycles are detected by run() before any action is invoked.
      */
-    void add_dependency(TaskId prerequisite,TaskId successor);
+    void add_dependency(TaskId prerequisite, TaskId successor);
 
     /** @brief Number of registered graph nodes. */
     std::size_t size() const noexcept { return _nodes.size(); }
@@ -85,8 +85,8 @@ class TaskGraph {
      *        does not report that every node executed. No execution order is
      *        guaranteed among independently ready nodes.
      */
-    void run(ThreadPool& scheduler,ParallelOptions options={1u,0u},
-             std::stop_token stop={});
+    void run(ThreadPool& scheduler, ParallelOptions options = {1u, 0u},
+             std::stop_token stop = {});
 
   private:
     /** @brief Store one graph action and its dependency bookkeeping. */

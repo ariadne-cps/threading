@@ -29,21 +29,22 @@
 #ifndef THREADING_THREAD_HPP
 #define THREADING_THREAD_HPP
 
-#include <utility>
-#include <thread>
-#include <future>
-#include <mutex>
 #include <atomic>
 #include <functional>
+#include <future>
+#include <mutex>
+#include <thread>
+#include <utility>
+
 #include "utility/macros.hpp"
 #include "utility/string.hpp"
 
 namespace Ariadne {
 
 using std::exception_ptr;
-using std::thread;
-using std::promise;
 using std::future;
+using std::promise;
+using std::thread;
 
 using VoidFunction = std::function<void(void)>;
 using Ariadne::String;
@@ -53,7 +54,6 @@ using Ariadne::String;
 //! a readable \a name.
 class Thread {
   public:
-
     //! \brief Construct with a \a name and \a active specification
     //! \details The thread will start and store the id if active, otherwise activate() will be needed.
     Thread(VoidFunction task, String name, bool active);

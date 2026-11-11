@@ -51,18 +51,18 @@ class BoundedChannel {
   public:
     /** @brief Construct a channel with a positive maximum capacity. */
     explicit BoundedChannel(std::size_t capacity) : _capacity(capacity) {
-        if(capacity==0u)
+        if (capacity == 0u)
             throw std::invalid_argument("BoundedChannel capacity must be positive");
     }
 
     /** @brief Disable copying of a channel. */
-    BoundedChannel(BoundedChannel const&)=delete;
+    BoundedChannel(const BoundedChannel&) = delete;
     /** @brief Disallow copy assignment. */
-    BoundedChannel& operator=(BoundedChannel const&)=delete;
+    BoundedChannel& operator=(const BoundedChannel&) = delete;
     /** @brief Disallow moving a channel. */
-    BoundedChannel(BoundedChannel&&)=delete;
+    BoundedChannel(BoundedChannel&&) = delete;
     /** @brief Disable move assignment. */
-    BoundedChannel& operator=(BoundedChannel&&)=delete;
+    BoundedChannel& operator=(BoundedChannel&&) = delete;
 
     /** @brief Return the channel's fixed maximum capacity. */
     std::size_t capacity() const noexcept { return _capacity; }
@@ -84,82 +84,88 @@ class BoundedChannel {
         bool first_close;
         {
             std::lock_guard lock(_mutex);
-            first_close=!_closed;
-            _closed=true;
+            first_close = !_closed;
+            _closed = true;
         }
-        if(first_close) {
+        if (first_close) {
             _not_empty.notify_all();
             _not_full.notify_all();
         }
         return first_close;
     }
 
-    template<class U> requires std::constructible_from<T,U&&>
+    template<class U>
+        requires std::constructible_from<T, U&&>
     /** @brief Try to enqueue a message without blocking. */
     bool try_send(U&& item) {
-        bool sent=false;
+        bool sent = false;
         {
             std::lock_guard lock(_mutex);
-            if(!_closed && _items.size()<_capacity) {
+            if (!_closed && _items.size() < _capacity) {
                 _items.emplace_back(std::forward<U>(item));
-                sent=true;
+                sent = true;
             }
         }
-        if(sent)_not_empty.notify_one();
+        if (sent)
+            _not_empty.notify_one();
         return sent;
     }
 
     //! False on cancellation or closure. Failed sends do not move from item.
-    template<class U> requires std::constructible_from<T,U&&>
-    bool send(U&& item,std::stop_token stop={}) {
-        bool sent=false;
+    template<class U>
+        requires std::constructible_from<T, U&&>
+    bool send(U&& item, std::stop_token stop = {}) {
+        bool sent = false;
         {
             std::unique_lock lock(_mutex);
-            _not_full.wait(lock,stop,[&] {
-                return _closed || _items.size()<_capacity;
+            _not_full.wait(lock, stop, [&] {
+                return _closed || _items.size() < _capacity;
             });
-            if(!stop.stop_requested() && !_closed) {
+            if (!stop.stop_requested() && !_closed) {
                 _items.emplace_back(std::forward<U>(item));
-                sent=true;
+                sent = true;
             }
         }
-        if(sent)_not_empty.notify_one();
+        if (sent)
+            _not_empty.notify_one();
         return sent;
     }
 
     /** @brief Try to consume one buffered message without blocking. */
     std::optional<T> try_receive() {
         std::optional<T> result;
-        bool received=false;
+        bool received = false;
         {
             std::lock_guard lock(_mutex);
-            if(!_items.empty()) {
+            if (!_items.empty()) {
                 result.emplace(std::move(_items.front()));
                 _items.pop_front();
-                received=true;
+                received = true;
             }
         }
-        if(received)_not_full.notify_one();
+        if (received)
+            _not_full.notify_one();
         return result;
     }
 
     //! Drain buffered messages after close; then return nullopt.
     //! A requested stop takes precedence over a buffered message.
-    std::optional<T> receive(std::stop_token stop={}) {
+    std::optional<T> receive(std::stop_token stop = {}) {
         std::optional<T> result;
-        bool received=false;
+        bool received = false;
         {
             std::unique_lock lock(_mutex);
-            _not_empty.wait(lock,stop,[&] {
+            _not_empty.wait(lock, stop, [&] {
                 return _closed || !_items.empty();
             });
-            if(!stop.stop_requested() && !_items.empty()) {
+            if (!stop.stop_requested() && !_items.empty()) {
                 result.emplace(std::move(_items.front()));
                 _items.pop_front();
-                received=true;
+                received = true;
             }
         }
-        if(received)_not_full.notify_one();
+        if (received)
+            _not_full.notify_one();
         return result;
     }
 
@@ -169,7 +175,7 @@ class BoundedChannel {
     std::condition_variable_any _not_empty;
     std::condition_variable_any _not_full;
     std::deque<T> _items;
-    bool _closed=false;
+    bool _closed = false;
 };
 
 } // namespace Ariadne

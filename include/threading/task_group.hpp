@@ -32,12 +32,12 @@
 #include <chrono>
 #include <exception>
 #include <functional>
-#include <memory>
 #include <future>
+#include <memory>
 #include <type_traits>
 #include <utility>
-#include <vector>
 #include <variant>
+#include <vector>
 
 #include "threading/thread_manager.hpp"
 #include "threading/thread_pool.hpp"
@@ -60,27 +60,27 @@ class TaskHandle {
                std::function<bool()> try_execute = {})
         : _scheduler(&scheduler), _future(std::move(future)),
           _acquisition(std::in_place_type<std::function<bool()>>,
-                       std::move(try_execute)) { }
+                       std::move(try_execute)) {}
 
     //! \brief Direct targeted acquisition for the ThreadPool ticket type.
     //! \details Works with ThreadPool and ThreadManager, including an empty
     //! ticket from the manager's synchronous execution mode.
     TaskHandle(Scheduler& scheduler, std::shared_future<Result> future,
                ThreadPool::Ticket ticket)
-        requires requires(Scheduler& s, ThreadPool::Ticket const& t) {
+        requires requires(Scheduler& s, const ThreadPool::Ticket& t) {
             s.try_run_task(t);
         }
         : _scheduler(&scheduler), _future(std::move(future)),
           _acquisition(std::in_place_type<ThreadPool::Ticket>,
-                       std::move(ticket)) { }
+                       std::move(ticket)) {}
 
     //! \brief Wait for completion, helping the scheduler if work is pending.
     void wait() const {
         using namespace std::chrono_literals;
-        if constexpr (requires(Scheduler& s, ThreadPool::Ticket const& t) {
-            s.try_run_task(t);
-        }) {
-            if (auto const* ticket=std::get_if<ThreadPool::Ticket>(&_acquisition)) {
+        if constexpr (requires(Scheduler& s, const ThreadPool::Ticket& t) {
+                          s.try_run_task(t);
+                      }) {
+            if (const auto* ticket = std::get_if<ThreadPool::Ticket>(&_acquisition)) {
                 // The worker and this waiter compete for the same queue entry.
                 if (_future.wait_for(0ms) != std::future_status::ready)
                     (void)_scheduler->try_run_task(*ticket);
@@ -88,8 +88,9 @@ class TaskHandle {
                 return;
             }
         }
-        if (auto const& try_execute =
-                std::get<std::function<bool()>>(_acquisition); try_execute) {
+        if (const auto& try_execute =
+                std::get<std::function<bool()>>(_acquisition);
+            try_execute) {
             if (_future.wait_for(0ms) != std::future_status::ready)
                 (void)try_execute();
             _future.wait();
@@ -113,7 +114,7 @@ class TaskHandle {
     std::shared_future<Result> _future;
     // Store one representation, not both: a pool ticket or a generic
     // type-erased callback, preserving the legacy TaskHandle constructor.
-    std::variant<ThreadPool::Ticket,std::function<bool()>> _acquisition;
+    std::variant<ThreadPool::Ticket, std::function<bool()>> _acquisition;
 };
 
 //! \brief Group of forked tasks, joined even when the caller leaves by exception.
@@ -126,11 +127,11 @@ template<class Scheduler>
 class TaskGroup {
   public:
     /** @brief Construct a task group referencing a scheduler that must outlive it. */
-    explicit TaskGroup(Scheduler& scheduler) noexcept : _scheduler(scheduler) { }
+    explicit TaskGroup(Scheduler& scheduler) noexcept : _scheduler(scheduler) {}
     /** @brief Disallow copying a task group. */
-    TaskGroup(TaskGroup const&) = delete;
+    TaskGroup(const TaskGroup&) = delete;
     /** @brief Disallow copy assignment. */
-    TaskGroup& operator=(TaskGroup const&) = delete;
+    TaskGroup& operator=(const TaskGroup&) = delete;
     /** @brief Disallow moving a task group. */
     TaskGroup(TaskGroup&&) = delete;
     /** @brief Disallow move assignment. */
@@ -138,8 +139,10 @@ class TaskGroup {
 
     /** @brief Join pending children without propagating exceptions from the destructor. */
     ~TaskGroup() noexcept {
-        try { join(); }
-        catch (...) { } // Explicit join() is required to observe exceptions.
+        try {
+            join();
+        } catch (...) {
+        } // Explicit join() is required to observe exceptions.
     }
 
     //! \brief Fork a callable onto the scheduler, returning a result handle.
@@ -151,7 +154,7 @@ class TaskGroup {
         auto future = task->get_future().share();
         // Ticket-based acquisition ensures that both a waiting handle and
         // a worker use the scheduler's single physical queue entry.
-        const auto ticket=_scheduler.enqueue_ticket([task] { (*task)(); });
+        const auto ticket = _scheduler.enqueue_ticket([task] { (*task)(); });
         // Once queued, any failure in the handle or joiner construction
         // must still wait for this child. Keeping a shared future alive also
         // covers a failure before the handle has been fully constructed.
@@ -160,14 +163,14 @@ class TaskGroup {
             // In one-worker tests it lets the caller acquire more short tasks
             // than the direct-ticket representation, avoiding costly handoffs.
             // Keep direct ticket handles available for explicit use and A/B tests.
-            auto try_execute=[scheduler=&_scheduler,ticket] {
+            auto try_execute = [scheduler = &_scheduler, ticket] {
                 return scheduler->try_run_task(ticket);
             };
-            TaskHandle<Scheduler,Result> handle(_scheduler,future,try_execute);
+            TaskHandle<Scheduler, Result> handle(_scheduler, future, try_execute);
             // The common recursive fork/compute/join pattern owns one child.
             // Store its joiner directly; do not allocate a vector buffer.
             if (not _first_joiner)
-                _first_joiner=[handle] { static_cast<void>(handle.get()); };
+                _first_joiner = [handle] { static_cast<void>(handle.get()); };
             else
                 _joiners.emplace_back([handle] { static_cast<void>(handle.get()); });
             return handle;
@@ -184,20 +187,24 @@ class TaskGroup {
     void join() {
         std::exception_ptr first_error;
         if (_first_joiner) {
-            try { _first_joiner(); }
-            catch (...) {
-                first_error=std::current_exception();
+            try {
+                _first_joiner();
+            } catch (...) {
+                first_error = std::current_exception();
             }
-            _first_joiner=nullptr;
+            _first_joiner = nullptr;
         }
-        for (auto& joiner : _joiners) {
-            try { joiner(); }
-            catch (...) {
-                if (not first_error) first_error=std::current_exception();
+        for (auto& joiner: _joiners) {
+            try {
+                joiner();
+            } catch (...) {
+                if (not first_error)
+                    first_error = std::current_exception();
             }
         }
         _joiners.clear();
-        if (first_error) std::rethrow_exception(first_error);
+        if (first_error)
+            std::rethrow_exception(first_error);
     }
 
   private:

@@ -30,9 +30,10 @@
 #define THREADING_WORKLOAD_INTERFACE_HPP
 
 #include <functional>
-#include "utility/container.hpp"
+
 #include "threading/using.hpp"
 #include "threading/workload_observation.hpp"
+#include "utility/container.hpp"
 
 namespace Ariadne {
 
@@ -46,8 +47,7 @@ using Ariadne::List;
 //!          tasks were instead enqueued to the ThreadManager, a depth-first execution would be performed.
 template<class E, class... AS>
 class WorkloadInterface : public WorkloadObservable {
-public:
-
+  public:
     //! \brief Process the given elements until completion
     virtual void process() = 0;
 
@@ -55,12 +55,12 @@ public:
     virtual size_t size() const = 0;
 
     //! \brief Append one element to process
-    virtual WorkloadInterface& append(E const &e) = 0;
+    virtual WorkloadInterface& append(const E& e) = 0;
 
     //! \brief Append a list of elements to process
-    virtual WorkloadInterface& append(List<E> const &es) = 0;
+    virtual WorkloadInterface& append(const List<E>& es) = 0;
 };
 
-}
+} // namespace Ariadne
 
 #endif // THREADING_WORKLOAD_INTERFACE_HPP

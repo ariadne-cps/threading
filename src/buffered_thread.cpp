@@ -22,8 +22,9 @@
  *  along with Ariadne Threading. If not, see <https://www.gnu.org/licenses/>.
  */
 
-#include "logging/logging.hpp"
 #include "threading/buffered_thread.hpp"
+
+#include "logging/logging.hpp"
 #include "threading/using.hpp"
 
 namespace Ariadne {
@@ -32,20 +33,22 @@ using Ariadne::Logger;
 using Ariadne::to_string;
 
 BufferedThread::BufferedThread(String name)
-        : _name(name), _task_buffer(1), _got_id_future(_got_id_promise.get_future())
-{
-    _thread = std::thread([=,this]() {
+    : _name(name), _task_buffer(1), _got_id_future(_got_id_promise.get_future()) {
+    _thread = std::thread([=, this]() {
         _id = std::this_thread::get_id();
         _got_id_promise.set_value();
-        for(;;) {
+        for (;;) {
             try {
                 std::function<void(void)> task = _task_buffer.pull();
                 task();
-            } catch(BufferInterruptPullingException&) { return; }
+            } catch (BufferInterruptPullingException&) {
+                return;
+            }
         }
     });
     _got_id_future.get();
-    if (name == String()) _name = to_string(_id);
+    if (name == String())
+        _name = to_string(_id);
     Logger::instance().register_thread(this->id(), this->name());
 }
 

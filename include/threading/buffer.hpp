@@ -29,29 +29,30 @@
 #ifndef THREADING_BUFFER_HPP
 #define THREADING_BUFFER_HPP
 
-#include <utility>
-#include <mutex>
 #include <condition_variable>
+#include <mutex>
 #include <queue>
-#include "utility/macros.hpp"
+#include <utility>
+
 #include "threading/using.hpp"
+#include "utility/macros.hpp"
 
 namespace Ariadne {
 
 //! \brief Exception useful when the buffer is allowed to stay in the receiving condition
-class BufferInterruptPullingException : public std::exception { };
+class BufferInterruptPullingException : public std::exception {};
 
 //! \brief A class for handling a buffer
-template<class E> class Buffer
-{
+template<class E>
+class Buffer {
   public:
     Buffer(size_t capacity) : _capacity(capacity), _interrupt(false) { ARIADNE_PRECONDITION(capacity > 0); }
 
     //! \brief Push an object into the buffer
     //! \details Will block if the capacity has been reached
-    void push(E const& e) {
+    void push(const E& e) {
         unique_lock<mutex> locker(mux);
-        _not_full.wait(locker, [this](){return _queue.size() < _capacity;});
+        _not_full.wait(locker, [this]() { return _queue.size() < _capacity; });
         _queue.push(e);
         locker.unlock();
         _not_empty.notify_one();
@@ -61,8 +62,11 @@ template<class E> class Buffer
     //! \details Will block if the capacity is zero
     E pull() {
         unique_lock<mutex> locker(mux);
-        _not_empty.wait(locker, [this](){return not _queue.empty() || _interrupt;});
-        if (_interrupt and _queue.empty()) { _interrupt = false; throw BufferInterruptPullingException(); }
+        _not_empty.wait(locker, [this]() { return not _queue.empty() || _interrupt; });
+        if (_interrupt and _queue.empty()) {
+            _interrupt = false;
+            throw BufferInterruptPullingException();
+        }
         E back = _queue.front();
         _queue.pop();
         locker.unlock();
@@ -84,9 +88,9 @@ template<class E> class Buffer
 
     //! \brief Change the capacity
     void set_capacity(size_t capacity) {
-        ARIADNE_PRECONDITION(capacity>0);
+        ARIADNE_PRECONDITION(capacity > 0);
         lock_guard<mutex> locker(mux);
-        ARIADNE_ASSERT_MSG(capacity>=_queue.size(),"Reducing capacity below currenty buffer size is not allowed.");
+        ARIADNE_ASSERT_MSG(capacity >= _queue.size(), "Reducing capacity below currenty buffer size is not allowed.");
         _capacity = capacity;
         _not_full.notify_all();
     }
@@ -101,7 +105,7 @@ template<class E> class Buffer
         _not_empty.notify_all();
     }
 
-private:
+  private:
     mutable mutex mux;
     condition_variable _not_empty;
     condition_variable _not_full;

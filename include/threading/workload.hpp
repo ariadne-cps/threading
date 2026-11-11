@@ -30,25 +30,26 @@
 #define THREADING_WORKLOAD_HPP
 
 #include <functional>
-#include "utility/container.hpp"
+
 #include "logging/progress_indicator.hpp"
-#include "threading/workload_interface.hpp"
 #include "threading/thread_manager.hpp"
 #include "threading/workload_advancement.hpp"
+#include "threading/workload_interface.hpp"
+#include "utility/container.hpp"
 
 namespace Ariadne {
 
-using Ariadne::ProgressIndicator;
-using Ariadne::LogScopeManager;
 using Ariadne::Logger;
+using Ariadne::LogScopeManager;
+using Ariadne::ProgressIndicator;
 
 using Ariadne::List;
 using Ariadne::make_lpair;
 
+using std::condition_variable;
+using std::lock_guard;
 using std::mutex;
 using std::unique_lock;
-using std::lock_guard;
-using std::condition_variable;
 
 /** @brief Non-template execution and Logging engine of workload classes.
  *  @details StaticWorkload and DynamicWorkload share this implementation;
@@ -88,12 +89,12 @@ class WorkloadCore {
     /** @brief Report whether execution is configured to use concurrent scheduling. */
     bool _using_concurrency() const;
     /** @brief Execute one scheduled task while recording its completion. */
-    void _concurrent_task_wrapper(CompletelyBoundFunctionType const& task,
-                                  CompletelyBoundFunctionType const& progress_acknowledge);
+    void _concurrent_task_wrapper(const CompletelyBoundFunctionType &task,
+                                  const CompletelyBoundFunctionType &progress_acknowledge);
     /** @brief Emit the workload hold diagnostic. */
     void _print_hold();
 
-    std::queue<std::pair<CompletelyBoundFunctionType,CompletelyBoundFunctionType>> _sequential_queue;
+    std::queue<std::pair<CompletelyBoundFunctionType, CompletelyBoundFunctionType>> _sequential_queue;
     unsigned int _logger_level;
     shared_ptr<LogScopeManager> _log_scope_manager;
     mutable mutex _element_availability_mutex;
@@ -105,12 +106,14 @@ class WorkloadCore {
 
 //! \brief Base class implementation
 template<class E, class... AS>
-class WorkloadBase : public WorkloadInterface<E,AS...>, protected WorkloadCore {
+class WorkloadBase : public WorkloadInterface<E, AS...>,
+                     protected WorkloadCore {
   protected:
-    WorkloadBase() : _progress_acknowledge_func(std::bind_front(&WorkloadBase::_default_progress_acknowledge, this)) { }
+    WorkloadBase() : _progress_acknowledge_func(std::bind_front(&WorkloadBase::_default_progress_acknowledge, this)) {}
+
   public:
-    using TaskFunctionType = std::function<void(E const &)>;
-    using ProgressAcknowledgeFunctionType = std::function<void(E const &, shared_ptr<ProgressIndicator>)>;
+    using TaskFunctionType = std::function<void(const E &)>;
+    using ProgressAcknowledgeFunctionType = std::function<void(const E &, shared_ptr<ProgressIndicator>)>;
     using CompletelyBoundFunctionType = std::function<void(void)>;
 
     /** @brief Process queued work through the shared workload engine. */
@@ -121,36 +124,37 @@ class WorkloadBase : public WorkloadInterface<E,AS...>, protected WorkloadCore {
 
     WorkloadSnapshot snapshot() const override { return this->_advancement.snapshot(); }
 
-    WorkloadInterface<E,AS...>& append(E const& e) override {
-        auto task = std::bind(std::forward<TaskFunctionType const>(_task_func), std::forward<E const&>(e));
-        auto progress_acknowledge = std::bind(std::forward<ProgressAcknowledgeFunctionType const>(_progress_acknowledge_func),
-                                              std::forward<E const&>(e), this->_progress_indicator);
-        this->_append_bound(std::move(task),std::move(progress_acknowledge));
+    WorkloadInterface<E, AS...> &append(const E &e) override {
+        auto task = std::bind(std::forward<const TaskFunctionType>(_task_func), std::forward<const E &>(e));
+        auto progress_acknowledge = std::bind(std::forward<const ProgressAcknowledgeFunctionType>(_progress_acknowledge_func),
+                                              std::forward<const E &>(e), this->_progress_indicator);
+        this->_append_bound(std::move(task), std::move(progress_acknowledge));
         return *this;
     }
 
-    WorkloadInterface<E,AS...>& append(List<E> const& es) override { for (auto e : es) append(e); return *this; }
+    WorkloadInterface<E, AS...> &append(const List<E> &es) override {
+        for (auto e: es)
+            append(e);
+        return *this;
+    }
 
   private:
-
     /** @brief Acknowledge completion on the default progress indicator. */
-    void _default_progress_acknowledge(E const&, shared_ptr<ProgressIndicator> indicator) {
+    void _default_progress_acknowledge(const E &, shared_ptr<ProgressIndicator> indicator) {
         indicator->update_current(static_cast<double>(this->_advancement.completed()));
         indicator->update_final(static_cast<double>(this->_advancement.total()));
     }
 
   protected:
-
     /** @brief Submit one workload element using the configured callback. */
-    void _enqueue(E const& e) {
-        auto task = std::bind(std::forward<TaskFunctionType const>(_task_func), std::forward<E const&>(e));
-        auto progress_acknowledge = std::bind(std::forward<ProgressAcknowledgeFunctionType const>(_progress_acknowledge_func),
-                                              std::forward<E const&>(e), this->_progress_indicator);
-        this->_enqueue_bound(std::move(task),std::move(progress_acknowledge));
+    void _enqueue(const E &e) {
+        auto task = std::bind(std::forward<const TaskFunctionType>(_task_func), std::forward<const E &>(e));
+        auto progress_acknowledge = std::bind(std::forward<const ProgressAcknowledgeFunctionType>(_progress_acknowledge_func),
+                                              std::forward<const E &>(e), this->_progress_indicator);
+        this->_enqueue_bound(std::move(task), std::move(progress_acknowledge));
     }
 
   protected:
-
     TaskFunctionType _task_func;
     ProgressAcknowledgeFunctionType _progress_acknowledge_func;
 };
@@ -161,12 +165,12 @@ class WorkloadBase : public WorkloadInterface<E,AS...>, protected WorkloadCore {
  *  @note Append all elements before process() to execute a static workload.
  */
 template<class E, class... AS>
-class StaticWorkload : public WorkloadBase<E,AS...> {
-public:
-    using TaskFunctionType = std::function<void(E const&, AS...)>;
+class StaticWorkload : public WorkloadBase<E, AS...> {
+  public:
+    using TaskFunctionType = std::function<void(const E &, AS...)>;
 
     StaticWorkload(TaskFunctionType f, AS... as) : WorkloadBase<E, AS...>() {
-        this->_task_func = std::bind(std::forward<TaskFunctionType const>(f), std::placeholders::_1, std::forward<AS>(as)...);
+        this->_task_func = std::bind(std::forward<const TaskFunctionType>(f), std::placeholders::_1, std::forward<AS>(as)...);
     }
 };
 
@@ -177,37 +181,41 @@ public:
  *  @tparam AS Additional task parameters.
  */
 template<class E, class... AS>
-class DynamicWorkload : public WorkloadBase<E,AS...> {
+class DynamicWorkload : public WorkloadBase<E, AS...> {
   public:
     /** @brief Restricted producer capability given to task callbacks.
      *  @note Access refers to its parent; it cannot outlive that workload.
      */
     class Access {
         friend DynamicWorkload;
-    protected:
-        Access(DynamicWorkload& parent) : _load(parent) { }
-    public:
+
+      protected:
+        Access(DynamicWorkload &parent) : _load(parent) {}
+
+      public:
         /** @brief Append a new item to the dynamic workload. */
-        void append(E const &e) { _load._enqueue(e); }
-    private:
-        DynamicWorkload& _load;
+        void append(const E &e) { _load._enqueue(e); }
+
+      private:
+        DynamicWorkload &_load;
     };
+
   public:
-    using TaskFunctionType = std::function<void(Access&, E const&, AS...)>;
-    using ProgressAcknowledgeFunctionType = std::function<void(E const&, shared_ptr<ProgressIndicator>)>;
+    using TaskFunctionType = std::function<void(Access &, const E &, AS...)>;
+    using ProgressAcknowledgeFunctionType = std::function<void(const E &, shared_ptr<ProgressIndicator>)>;
 
     DynamicWorkload(ProgressAcknowledgeFunctionType p, TaskFunctionType t, AS... as) : WorkloadBase<E, AS...>(), _access(Access(*this)) {
-        this->_task_func = std::bind(std::forward<TaskFunctionType const>(t),
-                                     std::forward<Access const&>(_access),
+        this->_task_func = std::bind(std::forward<const TaskFunctionType>(t),
+                                     std::forward<const Access &>(_access),
                                      std::placeholders::_1,
                                      std::forward<AS>(as)...);
         this->_progress_acknowledge_func = p;
     }
 
   private:
-    Access const _access;
+    const Access _access;
 };
 
-}
+} // namespace Ariadne
 
 #endif // THREADING_WORKLOAD_HPP

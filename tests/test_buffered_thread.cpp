@@ -22,37 +22,40 @@
  *  along with Ariadne Threading. If not, see <https://www.gnu.org/licenses/>.
  */
 
-#include "ariadne-testing.hpp"
 #include <future>
-#include "utility/container.hpp"
+
 #include "logging/logging.hpp"
 #include "logging/thread_registry_interface.hpp"
 #include "threading/buffered_thread.hpp"
+#include "utility/container.hpp"
+
+#include "ariadne-testing.hpp"
 
 using namespace Ariadne;
 
 class ThreadRegistry : public Ariadne::ThreadRegistryInterface {
-public:
-    ThreadRegistry() : _threads_registered(0) { }
+  public:
+    ThreadRegistry() : _threads_registered(0) {}
     bool has_threads_registered() const override { return _threads_registered > 0; }
     void set_threads_registered(unsigned int threads_registered) { _threads_registered = threads_registered; }
-private:
+
+  private:
     unsigned int _threads_registered;
 };
 
 class TestBufferedThread : public Ariadne::Testing::ContextFixture {
   public:
     using ContextFixture::ContextFixture;
-  public:
 
+  public:
     void test_create() {
         BufferedThread thread1("thr");
         ARIADNE_TESTING_EXPECT_NO_THROW(thread1.id());
-        ARIADNE_TESTING_EXPECT_EQUAL(thread1.name(),"thr");
-        ARIADNE_TESTING_EXPECT_EQUAL(thread1.queue_size(),0);
-        ARIADNE_TESTING_EXPECT_EQUAL(thread1.queue_capacity(),1);
+        ARIADNE_TESTING_EXPECT_EQUAL(thread1.name(), "thr");
+        ARIADNE_TESTING_EXPECT_EQUAL(thread1.queue_size(), 0);
+        ARIADNE_TESTING_EXPECT_EQUAL(thread1.queue_capacity(), 1);
         BufferedThread thread2;
-        ARIADNE_TESTING_EXPECT_EQUAL(to_string(thread2.id()),thread2.name());
+        ARIADNE_TESTING_EXPECT_EQUAL(to_string(thread2.id()), thread2.name());
     }
 
     void test_set_queue_capacity() {
@@ -88,12 +91,12 @@ class TestBufferedThread : public Ariadne::Testing::ContextFixture {
         auto gate = release.get_future().share();
         auto first = thread.enqueue([gate] { gate.wait(); });
         auto second = thread.enqueue([gate] { gate.wait(); });
-        ARIADNE_TESTING_PROVE(thread.queue_size()>0);
+        ARIADNE_TESTING_PROVE(thread.queue_size() > 0);
         release.set_value();
-        ARIADNE_TESTING_EXPECT_READY(second,std::chrono::seconds(10));
+        ARIADNE_TESTING_EXPECT_READY(second, std::chrono::seconds(10));
         first.get();
         second.get();
-        ARIADNE_TESTING_EXPECT_EQUAL(thread.queue_size(),0);
+        ARIADNE_TESTING_EXPECT_EQUAL(thread.queue_size(), 0);
     }
 
     void test_set_queue_capacity_down_failure() {
@@ -107,7 +110,7 @@ class TestBufferedThread : public Ariadne::Testing::ContextFixture {
         auto third = thread.enqueue(fn);
         ARIADNE_TESTING_EXPECT_EXCEPTION(thread.set_queue_capacity(1));
         release.set_value();
-        ARIADNE_TESTING_EXPECT_READY(third,std::chrono::seconds(10));
+        ARIADNE_TESTING_EXPECT_READY(third, std::chrono::seconds(10));
         first.get();
         second.get();
         third.get();
@@ -117,8 +120,8 @@ class TestBufferedThread : public Ariadne::Testing::ContextFixture {
     void test_task_return() {
         BufferedThread thread;
         auto result = thread.enqueue([] { return 42; });
-        ARIADNE_TESTING_EXPECT_READY(result,std::chrono::seconds(10));
-        ARIADNE_TESTING_EXPECT_EQUAL(result.get(),42);
+        ARIADNE_TESTING_EXPECT_READY(result, std::chrono::seconds(10));
+        ARIADNE_TESTING_EXPECT_EQUAL(result.get(), 42);
     }
 
     void test_task_capture() {
@@ -126,7 +129,7 @@ class TestBufferedThread : public Ariadne::Testing::ContextFixture {
         BufferedThread thread;
         auto future = thread.enqueue([&a] { a++; });
         future.get();
-        ARIADNE_TESTING_EXPECT_EQUAL(a,1);
+        ARIADNE_TESTING_EXPECT_EQUAL(a, 1);
     }
 
     void test_task_arguments() {
@@ -134,9 +137,9 @@ class TestBufferedThread : public Ariadne::Testing::ContextFixture {
         int y = 5;
         BufferedThread thread;
         auto future = thread.enqueue([](int a, int b) { return a * b; }, x, y);
-        ARIADNE_TESTING_EXPECT_READY(future,std::chrono::seconds(10));
+        ARIADNE_TESTING_EXPECT_READY(future, std::chrono::seconds(10));
         auto r = future.get();
-        ARIADNE_TESTING_EXPECT_EQUAL(r,15);
+        ARIADNE_TESTING_EXPECT_EQUAL(r, 15);
     }
 
     void test_multiple_tasks() {
@@ -151,28 +154,24 @@ class TestBufferedThread : public Ariadne::Testing::ContextFixture {
             return a;
         });
         int r = future.get();
-        ARIADNE_TESTING_EXPECT_EQUAL(r,42);
+        ARIADNE_TESTING_EXPECT_EQUAL(r, 42);
     }
 
     void test_atomic_multiple_threads() {
-        size_t n_threads = 10*std::thread::hardware_concurrency();
-        ARIADNE_TESTING_INSPECT("n_threads",n_threads);
+        size_t n_threads = 10 * std::thread::hardware_concurrency();
+        ARIADNE_TESTING_INSPECT("n_threads", n_threads);
         List<shared_ptr<BufferedThread>> threads;
 
         std::atomic<size_t> a = 0;
-        for (size_t i=0; i<n_threads; ++i) {
+        for (size_t i = 0; i < n_threads; ++i) {
             threads.push_back(make_shared<BufferedThread>(("add" + to_string(i))));
             threads.at(i)->enqueue([&a] { a++; });
         }
 
-        ARIADNE_TESTING_EXPECT_ATOMIC(a,
-            [n_threads](size_t observed) { return observed == n_threads; },
-            std::chrono::seconds(10));
-        ARIADNE_TESTING_EXPECT_EQUAL(a.load(),n_threads);
+        ARIADNE_TESTING_EXPECT_ATOMIC(a, [n_threads](size_t observed) { return observed == n_threads; }, std::chrono::seconds(10));
+        ARIADNE_TESTING_EXPECT_EQUAL(a.load(), n_threads);
         threads.clear();
     }
-
-
 };
 
 int main(int argc, char** argv) {

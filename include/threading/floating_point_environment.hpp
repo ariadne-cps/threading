@@ -48,16 +48,16 @@ class ScopedRoundingMode {
     explicit ScopedRoundingMode(std::optional<int> mode);
 
     /** @brief Disallow copying a rounding guard. */
-    ScopedRoundingMode(ScopedRoundingMode const&)=delete;
+    ScopedRoundingMode(const ScopedRoundingMode &) = delete;
     /** @brief Disallow copy assignment of a rounding guard. */
-    ScopedRoundingMode& operator=(ScopedRoundingMode const&)=delete;
+    ScopedRoundingMode &operator=(const ScopedRoundingMode &) = delete;
 
     /** @brief Restore the original mode on the same thread. */
     ~ScopedRoundingMode() noexcept;
 
   private:
-    int _previous=0;
-    bool _active=false;
+    int _previous = 0;
+    bool _active = false;
 };
 
 } // namespace Ariadne

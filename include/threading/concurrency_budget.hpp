@@ -46,11 +46,12 @@ class ConcurrencyBudget {
      */
     class Permit {
         friend class ConcurrencyBudget;
+
       public:
         /** @brief Disable copying of an owned permit. */
-        Permit(Permit const&)=delete;
+        Permit(const Permit&) = delete;
         /** @brief Disallow copy assignment. */
-        Permit& operator=(Permit const&)=delete;
+        Permit& operator=(const Permit&) = delete;
         /** @brief Move a permit without changing the total reservation count. */
         Permit(Permit&& other) noexcept;
         /** @brief Transfer ownership and release any previous permit. */
@@ -58,7 +59,8 @@ class ConcurrencyBudget {
         ~Permit() noexcept;
         /** @brief Return capacity exactly once; safe on moved-from permits. */
         void release() noexcept;
-        explicit operator bool() const noexcept { return _budget!=nullptr; }
+        explicit operator bool() const noexcept { return _budget != nullptr; }
+
       private:
         explicit Permit(ConcurrencyBudget* budget) noexcept;
         ConcurrencyBudget* _budget;
@@ -69,13 +71,13 @@ class ConcurrencyBudget {
      */
     explicit ConcurrencyBudget(std::size_t capacity);
     /** @brief Disallow copying the admission budget. */
-    ConcurrencyBudget(ConcurrencyBudget const&)=delete;
+    ConcurrencyBudget(const ConcurrencyBudget&) = delete;
     /** @brief Disallow copy assignment. */
-    ConcurrencyBudget& operator=(ConcurrencyBudget const&)=delete;
+    ConcurrencyBudget& operator=(const ConcurrencyBudget&) = delete;
     /** @brief Disallow moving a budget with active reservations. */
-    ConcurrencyBudget(ConcurrencyBudget&&)=delete;
+    ConcurrencyBudget(ConcurrencyBudget&&) = delete;
     /** @brief Disallow move assignment. */
-    ConcurrencyBudget& operator=(ConcurrencyBudget&&)=delete;
+    ConcurrencyBudget& operator=(ConcurrencyBudget&&) = delete;
 
     /** @brief Maximum number of simultaneous permits. */
     std::size_t capacity() const noexcept { return _capacity; }
@@ -89,7 +91,7 @@ class ConcurrencyBudget {
      *           the permit releaser is queued behind the waiting task.
      *           Prefer try_acquire() for nested parallelism.
      */
-    std::optional<Permit> acquire(std::stop_token stop={});
+    std::optional<Permit> acquire(std::stop_token stop = {});
 
   private:
     /** @brief Return one permit to the budget and notify a waiter. */

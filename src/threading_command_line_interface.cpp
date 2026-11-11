@@ -23,6 +23,7 @@
  */
 
 #include "threading/threading_command_line_interface.hpp"
+
 #include "threading/thread_manager.hpp"
 
 namespace Ariadne {
@@ -30,28 +31,26 @@ namespace Ariadne {
 CommandLineContribution threading_command_line_contribution() {
     return CommandLineContribution(
         "threading",
-        {
-            make_valued_argument_parser(
-                "c",
-                "concurrency",
-                "Choose the concurrency as a non-negative integer <value> or use 'max' to choose the hardware concurrency of this machine (default: 0)",
-                [](String const& value) -> VoidFunction {
-                    if (value == "max") {
-                        return [] {
-                            ThreadManager::instance().set_maximum_concurrency();
-                        };
-                    }
-
-                    Int const concurrency=std::stoi(value);
-                    if (concurrency < 0) {
-                        throw std::runtime_error("negative concurrency");
-                    }
-                    return [concurrency] {
-                        ThreadManager::instance().set_concurrency(
-                            static_cast<SizeType>(concurrency));
+        {make_valued_argument_parser(
+            "c",
+            "concurrency",
+            "Choose the concurrency as a non-negative integer <value> or use 'max' to choose the hardware concurrency of this machine (default: 0)",
+            [](const String& value) -> VoidFunction {
+                if (value == "max") {
+                    return [] {
+                        ThreadManager::instance().set_maximum_concurrency();
                     };
-                })
-        });
+                }
+
+                const Int concurrency = std::stoi(value);
+                if (concurrency < 0) {
+                    throw std::runtime_error("negative concurrency");
+                }
+                return [concurrency] {
+                    ThreadManager::instance().set_concurrency(
+                        static_cast<SizeType>(concurrency));
+                };
+            })});
 }
 
 ThreadingCommandLineInterface::ThreadingCommandLineInterface() {

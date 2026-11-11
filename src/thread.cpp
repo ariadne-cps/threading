@@ -22,8 +22,9 @@
  *  along with Ariadne Threading. If not, see <https://www.gnu.org/licenses/>.
  */
 
-#include "logging/logging.hpp"
 #include "threading/thread.hpp"
+
+#include "logging/logging.hpp"
 
 namespace Ariadne {
 
@@ -31,31 +32,31 @@ using Ariadne::Logger;
 using Ariadne::to_string;
 
 Thread::Thread(VoidFunction task, String name, bool active)
-        : _name(std::move(name)), _got_id_future(_got_id_promise.get_future()), _active(active), _ready_for_task_future(_ready_for_task_promise.get_future()),
-          _exception(nullptr)
-{
-    _thread = std::thread([=,this]() {
+    : _name(std::move(name)), _got_id_future(_got_id_promise.get_future()), _active(active), _ready_for_task_future(_ready_for_task_promise.get_future()),
+      _exception(nullptr) {
+    _thread = std::thread([=, this]() {
         _id = std::this_thread::get_id();
         _got_id_promise.set_value();
         _ready_for_task_future.get();
         if (_active) {
-            try { task(); }
-            catch(...) {
+            try {
+                task();
+            } catch (...) {
                 std::lock_guard<std::mutex> lock(_exception_mutex);
                 _exception = std::current_exception();
             }
         }
     });
     _got_id_future.get();
-    if (_name.empty()) _name = to_string(_id);
+    if (_name.empty())
+        _name = to_string(_id);
     if (active) {
-        Logger::instance().register_thread(_id,_name);
+        Logger::instance().register_thread(_id, _name);
         _ready_for_task_promise.set_value();
     }
 }
 
-Thread::Thread(VoidFunction task, String name) : Thread(task, name, true)
-{ }
+Thread::Thread(VoidFunction task, String name) : Thread(task, name, true) {}
 
 thread::id Thread::id() const {
     return _id;
@@ -65,10 +66,10 @@ String Thread::name() const {
     return _name;
 }
 
-void Thread::activate()  {
+void Thread::activate() {
     bool expected = false;
-    if (_active.compare_exchange_strong(expected,true)) {
-        Logger::instance().register_thread(_id,_name);
+    if (_active.compare_exchange_strong(expected, true)) {
+        Logger::instance().register_thread(_id, _name);
         _ready_for_task_promise.set_value();
     }
 }
@@ -80,9 +81,11 @@ exception_ptr Thread::exception() const {
 
 Thread::~Thread() {
     auto active = _active.load();
-    if (not active) _ready_for_task_promise.set_value();
+    if (not active)
+        _ready_for_task_promise.set_value();
     _thread.join();
-    if (active) Logger::instance().unregister_thread(_id);
+    if (active)
+        Logger::instance().unregister_thread(_id);
 }
 
 } // namespace Ariadne

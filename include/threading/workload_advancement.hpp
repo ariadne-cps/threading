@@ -31,6 +31,7 @@
 
 #include <algorithm>
 #include <mutex>
+
 #include "threading/workload_observation.hpp"
 
 namespace Ariadne {
