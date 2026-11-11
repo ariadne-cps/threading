@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.15)
 
-project(Threading VERSION 3.0)
+project(AriadneThreading VERSION 3.0)
 
 option(WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
 
