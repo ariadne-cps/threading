@@ -49,7 +49,9 @@ class ConcurrencyBudget {
       public:
         /** @brief Disable copying of an owned permit. */
         Permit(Permit const&)=delete;
+        /** @brief Disallow copy assignment. */
         Permit& operator=(Permit const&)=delete;
+        /** @brief Move a permit without changing the total reservation count. */
         Permit(Permit&& other) noexcept;
         /** @brief Transfer ownership and release any previous permit. */
         Permit& operator=(Permit&& other) noexcept;
@@ -66,10 +68,13 @@ class ConcurrencyBudget {
      *  @throws std::invalid_argument if capacity is zero.
      */
     explicit ConcurrencyBudget(std::size_t capacity);
+    /** @brief Disallow copying the admission budget. */
     ConcurrencyBudget(ConcurrencyBudget const&)=delete;
+    /** @brief Disallow copy assignment. */
     ConcurrencyBudget& operator=(ConcurrencyBudget const&)=delete;
     /** @brief Disallow moving a budget with active reservations. */
     ConcurrencyBudget(ConcurrencyBudget&&)=delete;
+    /** @brief Disallow move assignment. */
     ConcurrencyBudget& operator=(ConcurrencyBudget&&)=delete;
 
     /** @brief Maximum number of simultaneous permits. */

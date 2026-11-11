@@ -48,7 +48,9 @@ class StopTaskGroup {
 
     /** @brief Disallow copying the task group. */
     StopTaskGroup(StopTaskGroup const&) = delete;
+    /** @brief Disallow copy assignment. */
     StopTaskGroup& operator=(StopTaskGroup const&) = delete;
+    /** @brief Disallow moving a task group. */
     StopTaskGroup(StopTaskGroup&&) = delete;
     /** @brief Disallow move assignment. */
     StopTaskGroup& operator=(StopTaskGroup&&) = delete;
@@ -59,10 +61,12 @@ class StopTaskGroup {
         return _stop_source.get_token();
     }
 
+    /** @brief Report whether cooperative stop has been requested. */
     bool stop_requested() const noexcept {
         return _stop_source.stop_requested();
     }
 
+    /** @brief Request cancellation and report whether this call initiated it. */
     bool request_stop() noexcept {
         return _stop_source.request_stop();
     }

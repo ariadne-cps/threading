@@ -57,11 +57,14 @@ class BoundedChannel {
 
     /** @brief Disable copying of a channel. */
     BoundedChannel(BoundedChannel const&)=delete;
+    /** @brief Disallow copy assignment. */
     BoundedChannel& operator=(BoundedChannel const&)=delete;
+    /** @brief Disallow moving a channel. */
     BoundedChannel(BoundedChannel&&)=delete;
     /** @brief Disable move assignment. */
     BoundedChannel& operator=(BoundedChannel&&)=delete;
 
+    /** @brief Return the channel's fixed maximum capacity. */
     std::size_t capacity() const noexcept { return _capacity; }
 
     /** @brief Read the current buffered message count under synchronization. */

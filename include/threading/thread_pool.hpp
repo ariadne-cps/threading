@@ -96,9 +96,11 @@ class ThreadPool {
     /** @brief Execute one available task on the calling thread if possible. */
     bool try_run_one_task();
     Ticket enqueue_ticket(VoidFunction task);
+    /** @brief Try to acquire and run a specific queued task. */
     bool try_run_task(Ticket const& ticket);
     /** @brief Read the number of queued tasks. */
     size_t queue_size() const noexcept;
+    /** @brief Return the number of workers. */
     size_t num_threads() const;
 
     //! \brief Administratively resize the worker set.
@@ -128,12 +130,19 @@ class ThreadPool {
 
     Ticket _enqueue_task(VoidFunction task,bool tracked=false);
     // Caller holds the queue's mutex.
+    /** @brief Remove and claim a queued task. */
     void _extract(TaskQueue& queue,TaskQueue::iterator it,VoidFunction& task);
+    /** @brief Try to acquire work from available queues. */
     bool _take(VoidFunction& task);
+    /** @brief Try to acquire work from the global queue. */
     bool _take_global(VoidFunction& task);
+    /** @brief Try to acquire work from a local queue or steal it. */
     bool _take_local(size_t index,VoidFunction& task,bool steal);
+    /** @brief Run one claimed task and account for its completion. */
     void _execute(VoidFunction task);
+    /** @brief Drive one worker's task acquisition loop. */
     void _worker_loop(size_t index);
+    /** @brief Account for completed scheduler activity. */
     void _finish_activity() noexcept;
 
     const String _name;

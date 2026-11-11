@@ -127,10 +127,13 @@ class TaskGroup {
   public:
     /** @brief Construct a task group referencing a scheduler that must outlive it. */
     explicit TaskGroup(Scheduler& scheduler) noexcept : _scheduler(scheduler) { }
+    /** @brief Disallow copying a task group. */
     TaskGroup(TaskGroup const&) = delete;
+    /** @brief Disallow copy assignment. */
     TaskGroup& operator=(TaskGroup const&) = delete;
     /** @brief Disallow moving a task group. */
     TaskGroup(TaskGroup&&) = delete;
+    /** @brief Disallow move assignment. */
     TaskGroup& operator=(TaskGroup&&) = delete;
 
     /** @brief Join pending children without propagating exceptions from the destructor. */
