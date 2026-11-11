@@ -46,9 +46,12 @@ class ThreadManager : public ThreadRegistryInterface {
   private:
     ThreadManager();
   public:
+    /** @brief Disallow copying the singleton manager. */
     ThreadManager(ThreadManager const&) = delete;
+    /** @brief Disallow assignment of the singleton manager. */
     void operator=(ThreadManager const&) = delete;
 
+    /** @brief Destroy the manager with its owned scheduler state. */
     virtual ~ThreadManager() = default;
 
     //! \brief The singleton instance of this class

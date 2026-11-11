@@ -85,9 +85,12 @@ class WorkloadCore {
     shared_ptr<ProgressIndicator> _progress_indicator;
 
   private:
+    /** @brief Report whether execution is configured to use concurrent scheduling. */
     bool _using_concurrency() const;
+    /** @brief Execute one scheduled task while recording its completion. */
     void _concurrent_task_wrapper(CompletelyBoundFunctionType const& task,
                                   CompletelyBoundFunctionType const& progress_acknowledge);
+    /** @brief Emit the workload hold diagnostic. */
     void _print_hold();
 
     std::queue<std::pair<CompletelyBoundFunctionType,CompletelyBoundFunctionType>> _sequential_queue;
@@ -110,8 +113,10 @@ class WorkloadBase : public WorkloadInterface<E,AS...>, protected WorkloadCore {
     using ProgressAcknowledgeFunctionType = std::function<void(E const &, shared_ptr<ProgressIndicator>)>;
     using CompletelyBoundFunctionType = std::function<void(void)>;
 
+    /** @brief Process queued work through the shared workload engine. */
     void process() override { this->_process(); }
 
+    /** @brief Read the current queued workload size. */
     size_t size() const override { return this->_size(); }
 
     WorkloadSnapshot snapshot() const override { return this->_advancement.snapshot(); }
@@ -128,6 +133,7 @@ class WorkloadBase : public WorkloadInterface<E,AS...>, protected WorkloadCore {
 
   private:
 
+    /** @brief Acknowledge completion on the default progress indicator. */
     void _default_progress_acknowledge(E const&, shared_ptr<ProgressIndicator> indicator) {
         indicator->update_current(static_cast<double>(this->_advancement.completed()));
         indicator->update_final(static_cast<double>(this->_advancement.total()));
@@ -135,6 +141,7 @@ class WorkloadBase : public WorkloadInterface<E,AS...>, protected WorkloadCore {
 
   protected:
 
+    /** @brief Submit one workload element using the configured callback. */
     void _enqueue(E const& e) {
         auto task = std::bind(std::forward<TaskFunctionType const>(_task_func), std::forward<E const&>(e));
         auto progress_acknowledge = std::bind(std::forward<ProgressAcknowledgeFunctionType const>(_progress_acknowledge_func),
@@ -180,6 +187,7 @@ class DynamicWorkload : public WorkloadBase<E,AS...> {
     protected:
         Access(DynamicWorkload& parent) : _load(parent) { }
     public:
+        /** @brief Append a new item to the dynamic workload. */
         void append(E const &e) { _load._enqueue(e); }
     private:
         DynamicWorkload& _load;

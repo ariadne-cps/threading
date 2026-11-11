@@ -41,6 +41,7 @@ struct WorkloadSnapshot {
     std::size_t processing=0u;
     std::size_t completed=0u;
 
+    /** @brief Return the total number of waiting, processing and completed items. */
     std::size_t total() const noexcept {
         return waiting+processing+completed;
     }
@@ -51,6 +52,7 @@ struct WorkloadSnapshot {
                                    static_cast<double>(count);
     }
 
+    /** @brief Report whether any work remains outstanding. */
     bool has_finished() const noexcept {
         return waiting==0u && processing==0u;
     }
@@ -63,7 +65,9 @@ struct WorkloadSnapshot {
 //! An observer must not outlive the source object being inspected.
 class WorkloadObservable {
   public:
+    /** @brief Destroy a workload observer interface. */
     virtual ~WorkloadObservable() = default;
+    /** @brief Capture an internally consistent progress snapshot. */
     virtual WorkloadSnapshot snapshot() const = 0;
 };
 
