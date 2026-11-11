@@ -22,6 +22,10 @@
  *  along with Threading.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+/** @file threading/threading_command_line_interface.hpp
+ *  @brief Declarations and utilities for threading command line interface.
+ */
+
 #ifndef ARIADNE_THREADING_COMMAND_LINE_INTERFACE_HPP
 #define ARIADNE_THREADING_COMMAND_LINE_INTERFACE_HPP
 
