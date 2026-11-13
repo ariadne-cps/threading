@@ -28,8 +28,8 @@
 
 #include "logging/logging.hpp"
 #include "logging/thread_registry_interface.hpp"
-#include "threading/thread_pool.hpp"
 #include "threading/task_group.hpp"
+#include "threading/thread_pool.hpp"
 
 #include "ariadne-testing.hpp"
 
@@ -83,16 +83,17 @@ class TestSmartThreadPool : public Ariadne::Testing::ContextFixture {
             // A child submitted by a worker inherits that worker's
             // active nested scope, including a cooperative one-worker join.
             const auto nested = pool.enqueue([&] {
-                LogScopeManager nested_scope("nested");
-                const unsigned int nested_level = Logger::instance().current_level();
-                TaskGroup<ThreadPool> group(pool);
-                auto child = group.fork([] {
-                    return Logger::instance().current_level();
-                });
-                const unsigned int child_level = child.get();
-                group.join();
-                return std::make_pair(nested_level, child_level);
-            }).get();
+                                        LogScopeManager nested_scope("nested");
+                                        const unsigned int nested_level = Logger::instance().current_level();
+                                        TaskGroup<ThreadPool> group(pool);
+                                        auto child = group.fork([] {
+                                            return Logger::instance().current_level();
+                                        });
+                                        const unsigned int child_level = child.get();
+                                        group.join();
+                                        return std::make_pair(nested_level, child_level);
+                                    })
+                                    .get();
             ARIADNE_TESTING_EXPECT_EQUAL(nested.first, parent_level + 1u);
             ARIADNE_TESTING_EXPECT_EQUAL(nested.second, nested.first);
             ARIADNE_TESTING_EXPECT_EQUAL(
