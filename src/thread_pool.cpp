@@ -32,6 +32,51 @@ namespace Ariadne {
 
 thread_local ThreadPool::WorkerContext ThreadPool::_current{nullptr, no_worker, 0u};
 
+namespace {
+
+// Guard only adjusts the per-thread scope level, never process-wide
+// verbosity. Nested tasks and cooperative helping restore the previous
+// caller/worker context even when a callback throws.
+class ScopedTaskLogLevel {
+  public:
+    explicit ScopedTaskLogLevel(std::optional<unsigned int> inherited)
+        : _logger(Logger::instance()), _previous(_logger.try_current_level()) {
+        if (inherited && _previous)
+            this->_set(*inherited);
+    }
+
+    ScopedTaskLogLevel(const ScopedTaskLogLevel&) = delete;
+    ScopedTaskLogLevel& operator=(const ScopedTaskLogLevel&) = delete;
+
+    ~ScopedTaskLogLevel() noexcept {
+        if (_previous) {
+            try {
+                this->_set(*_previous);
+            } catch (...) {
+                // The scheduler must still account for task completion.
+            }
+        }
+    }
+
+  private:
+    void _set(unsigned int level) {
+        // An unregistered caller or executor has no associated scheduler
+        // state. Never dereference a missing registration.
+        const auto current = _logger.try_current_level();
+        if (!current)
+            return;
+        if (level > *current)
+            _logger.increase_level(level - *current);
+        else if (*current > level)
+            _logger.decrease_level(*current - level);
+    }
+
+    Logger& _logger;
+    std::optional<unsigned int> _previous;
+};
+
+} // namespace
+
 String construct_thread_name(String prefix, size_t number, size_t max_number) {
     std::ostringstream ss;
     ss << prefix;
@@ -127,6 +172,11 @@ void ThreadPool::set_num_threads(size_t number) {
 }
 
 ThreadPool::Ticket ThreadPool::_enqueue_task(VoidFunction task, bool tracked) {
+    // Each task carries its submitting thread's log scope depth. Worker
+    // registration snapshots only the scope at worker creation and cannot
+    // represent later nested submissions. Unregistered external callers
+    // contribute no context rather than accessing absent logger state.
+    const auto inherited_log_level = Logger::instance().try_current_level();
     Ticket ticket = tracked ? std::make_shared<TaskTicket>() : Ticket{};
     // Reserve activity before making the queue entry visible: destruction
     // must never mistake a submission in progress for an idle scheduler.
@@ -144,7 +194,7 @@ ThreadPool::Ticket ThreadPool::_enqueue_task(VoidFunction task, bool tracked) {
     try {
         auto insert = [&](TaskQueue& queue, std::mutex& queue_mutex) {
             std::lock_guard<std::mutex> lock(queue_mutex);
-            const auto it = queue.insert(queue.end(), QueuedTask{ticket, std::move(task)});
+            const auto it = queue.insert(queue.end(), QueuedTask{ticket, std::move(task), inherited_log_level});
             if (ticket) {
                 ticket->owner = this;
                 ticket->queue = &queue;
@@ -180,10 +230,12 @@ ThreadPool::Ticket ThreadPool::enqueue_ticket(VoidFunction task) {
     return _enqueue_task(std::move(task), true);
 }
 
-void ThreadPool::_extract(TaskQueue& queue, TaskQueue::iterator it, VoidFunction& task) {
-    task = std::move(it->function);
+void ThreadPool::_extract(TaskQueue& queue, TaskQueue::iterator it, QueuedTask& task) {
+    // Mark pending before moving: the moved-from queue entry no longer
+    // owns its ticket. A ticket can never claim this task twice.
     if (it->ticket)
         it->ticket->pending = false;
+    task = std::move(*it);
     queue.erase(it);
     _pending.fetch_sub(1, std::memory_order_acq_rel);
 }
@@ -191,7 +243,7 @@ void ThreadPool::_extract(TaskQueue& queue, TaskQueue::iterator it, VoidFunction
 bool ThreadPool::try_run_task(const Ticket& ticket) {
     if (!ticket || ticket->owner != this)
         return false;
-    VoidFunction task;
+    QueuedTask task;
     bool extracted = false;
     {
         std::lock_guard<std::mutex> lock(*ticket->queue_mutex);
@@ -205,7 +257,7 @@ bool ThreadPool::try_run_task(const Ticket& ticket) {
     return extracted;
 }
 
-bool ThreadPool::_take_global(VoidFunction& task) {
+bool ThreadPool::_take_global(QueuedTask& task) {
     std::lock_guard<std::mutex> lock(_global_mutex);
     if (_global.empty())
         return false;
@@ -213,7 +265,7 @@ bool ThreadPool::_take_global(VoidFunction& task) {
     return true;
 }
 
-bool ThreadPool::_take_local(size_t index, VoidFunction& task, bool steal) {
+bool ThreadPool::_take_local(size_t index, QueuedTask& task, bool steal) {
     auto& local = *_locals[index];
     std::lock_guard<std::mutex> lock(local.mutex);
     if (local.tasks.empty())
@@ -223,7 +275,7 @@ bool ThreadPool::_take_local(size_t index, VoidFunction& task, bool steal) {
     return true;
 }
 
-bool ThreadPool::_take(VoidFunction& task) {
+bool ThreadPool::_take(QueuedTask& task) {
     std::shared_lock<std::shared_mutex> topology_lock(_topology_mutex);
     const size_t own = _current.pool == this ? _current.index : no_worker;
     const size_t active = _desired_workers.load(std::memory_order_acquire);
@@ -252,13 +304,18 @@ bool ThreadPool::_take(VoidFunction& task) {
     return false;
 }
 
-void ThreadPool::_execute(VoidFunction task) {
+void ThreadPool::_execute(QueuedTask task) {
     WorkerContext previous = _current;
     const size_t index = previous.pool == this ? previous.index : no_worker;
     _current = {this, index, 0u};
+
+    // A claimed task may run on a worker, a stealing worker or the caller
+    // helping a join. Preserve the executor's prior level in every case,
+    // including callbacks that throw or change their log scope depth.
     // enqueue and TaskGroup futures own user exceptions.
     try {
-        task();
+        ScopedTaskLogLevel inherited(task.inherited_log_level);
+        task.function();
     } catch (...) {
     }
     _current = previous;
@@ -277,7 +334,7 @@ void ThreadPool::_finish_activity() noexcept {
 }
 
 bool ThreadPool::try_run_one_task() {
-    VoidFunction task;
+    QueuedTask task;
     if (!_take(task))
         return false;
     _execute(std::move(task));
@@ -290,7 +347,7 @@ void ThreadPool::_worker_loop(size_t index) {
     for (;;) {
         if (index >= _desired_workers.load(std::memory_order_acquire))
             break;
-        VoidFunction task;
+        QueuedTask task;
         if (_take(task)) {
             _execute(std::move(task));
             continue;

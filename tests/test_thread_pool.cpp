@@ -22,11 +22,14 @@
  *  along with Ariadne Threading. If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include <atomic>
 #include <chrono>
+#include <stdexcept>
 
 #include "logging/logging.hpp"
 #include "logging/thread_registry_interface.hpp"
 #include "threading/thread_pool.hpp"
+#include "threading/task_group.hpp"
 
 #include "ariadne-testing.hpp"
 
@@ -49,6 +52,112 @@ class TestSmartThreadPool : public Ariadne::Testing::ContextFixture {
     using ContextFixture::ContextFixture;
 
   public:
+    void test_task_logging_inheritance() {
+        auto& logger = Logger::instance();
+        const unsigned int baseline = logger.current_level();
+        ThreadPool pool(1u);
+        // A persistent worker is initially created at the baseline level.
+        ARIADNE_TESTING_EXPECT_EQUAL(
+            pool.enqueue([] { return Logger::instance().current_level(); }).get(),
+            baseline);
+
+        {
+            LogScopeManager parent("parent");
+            const unsigned int parent_level = logger.current_level();
+            ARIADNE_TESTING_EXPECT_EQUAL(parent_level, baseline + 1u);
+            ARIADNE_TESTING_EXPECT_EQUAL(
+                pool.enqueue([] { return Logger::instance().current_level(); }).get(),
+                parent_level);
+
+            // A task may leave the level unbalanced or throw: the next
+            // task must still observe its own submitter's scope depth.
+            auto throwing = pool.enqueue([] {
+                Logger::instance().increase_level(3u);
+                throw std::runtime_error("task fails");
+            });
+            ARIADNE_TESTING_EXPECT_EXCEPTION(throwing.get());
+            ARIADNE_TESTING_EXPECT_EQUAL(
+                pool.enqueue([] { return Logger::instance().current_level(); }).get(),
+                parent_level);
+
+            // A child submitted by a worker inherits that worker's
+            // active nested scope, including a cooperative one-worker join.
+            const auto nested = pool.enqueue([&] {
+                LogScopeManager nested_scope("nested");
+                const unsigned int nested_level = Logger::instance().current_level();
+                TaskGroup<ThreadPool> group(pool);
+                auto child = group.fork([] {
+                    return Logger::instance().current_level();
+                });
+                const unsigned int child_level = child.get();
+                group.join();
+                return std::make_pair(nested_level, child_level);
+            }).get();
+            ARIADNE_TESTING_EXPECT_EQUAL(nested.first, parent_level + 1u);
+            ARIADNE_TESTING_EXPECT_EQUAL(nested.second, nested.first);
+            ARIADNE_TESTING_EXPECT_EQUAL(
+                pool.enqueue([] { return Logger::instance().current_level(); }).get(),
+                parent_level);
+        }
+
+        // Capture at enqueue-time: a task blocked behind an earlier
+        // job must retain its submitting scope even after that scope exits.
+        std::promise<void> started, release;
+        auto gate = release.get_future().share();
+        auto blocking = pool.enqueue([&] {
+            started.set_value();
+            gate.wait();
+        });
+        started.get_future().wait();
+        future<unsigned int> delayed;
+        unsigned int submitted_level = 0u;
+        {
+            LogScopeManager temporary("temporary");
+            submitted_level = logger.current_level();
+            delayed = pool.enqueue([] { return Logger::instance().current_level(); });
+        }
+        release.set_value();
+        blocking.get();
+        ARIADNE_TESTING_EXPECT_EQUAL(delayed.get(), submitted_level);
+
+        // The same worker reused for an unrelated caller sees no leaked depth.
+        ARIADNE_TESTING_EXPECT_EQUAL(
+            pool.enqueue([] { return Logger::instance().current_level(); }).get(),
+            baseline);
+
+        // Ticket helping and zero-worker execution must also restore
+        // whichever thread happens to execute the claimed callback.
+        ThreadPool empty_pool(0u);
+        unsigned int executed_level = 0u;
+        {
+            LogScopeManager parent("ticket-parent");
+            const unsigned int submitted = logger.current_level();
+            auto ticket = empty_pool.enqueue_ticket([&] {
+                executed_level = Logger::instance().current_level();
+                Logger::instance().increase_level(2u);
+            });
+            ARIADNE_TESTING_PROVE(empty_pool.try_run_task(ticket));
+            ARIADNE_TESTING_EXPECT_EQUAL(executed_level, submitted);
+            ARIADNE_TESTING_EXPECT_EQUAL(logger.current_level(), submitted);
+            ARIADNE_TESTING_PROVE(not empty_pool.try_run_task(ticket));
+        }
+        ARIADNE_TESTING_EXPECT_EQUAL(logger.current_level(), baseline);
+
+        // Submissions by an unregistered external thread are allowed.
+        // No missing logger registry entry may be dereferenced.
+        std::optional<unsigned int> unregistered_level;
+        std::thread external([&] {
+            unregistered_level = Logger::instance().try_current_level();
+            auto work = pool.enqueue([] { return 42; });
+            work.get();
+        });
+        external.join();
+        ARIADNE_TESTING_PROVE(not unregistered_level.has_value());
+        ARIADNE_TESTING_EXPECT_EQUAL(
+            pool.enqueue([] { return Logger::instance().current_level(); }).get(),
+            baseline);
+    }
+
     void test_construct_thread_name() {
         ARIADNE_TESTING_EXPECT_EQUAL(construct_thread_name("name", 9, 9), "name9");
         ARIADNE_TESTING_EXPECT_EQUAL(construct_thread_name("name", 9, 10), "name09");
@@ -340,6 +449,7 @@ int main(int argc, char** argv) {
     Ariadne::Logger::instance().attach_thread_registry(&registry);
     ARIADNE_TESTING_SUITE("thread_pool");
     ARIADNE_TESTING_ADD_TEST(TestSmartThreadPool, test_construct_thread_name);
+    ARIADNE_TESTING_ADD_TEST(TestSmartThreadPool, test_task_logging_inheritance);
     ARIADNE_TESTING_ADD_TEST(TestSmartThreadPool, test_construct);
     ARIADNE_TESTING_ADD_TEST(TestSmartThreadPool, test_construct_empty);
     ARIADNE_TESTING_ADD_TEST(TestSmartThreadPool, test_construct_with_name);

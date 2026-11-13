@@ -35,6 +35,7 @@
 #include <list>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <shared_mutex>
 #include <string>
 #include <thread>
@@ -113,6 +114,9 @@ class ThreadPool {
     struct QueuedTask {
         Ticket ticket;
         VoidFunction function;
+        // Scope depth captured when submitted, not when a persistent worker
+        // was created. Empty for external callers unregistered with Logging.
+        std::optional<unsigned int> inherited_log_level;
     };
     /** @brief Store tasks belonging to one worker. */
     struct LocalQueue {
@@ -131,15 +135,15 @@ class ThreadPool {
     Ticket _enqueue_task(VoidFunction task, bool tracked = false);
     // Caller holds the queue's mutex.
     /** @brief Remove and claim a queued task. */
-    void _extract(TaskQueue& queue, TaskQueue::iterator it, VoidFunction& task);
+    void _extract(TaskQueue& queue, TaskQueue::iterator it, QueuedTask& task);
     /** @brief Try to acquire work from available queues. */
-    bool _take(VoidFunction& task);
+    bool _take(QueuedTask& task);
     /** @brief Try to acquire work from the global queue. */
-    bool _take_global(VoidFunction& task);
+    bool _take_global(QueuedTask& task);
     /** @brief Try to acquire work from a local queue or steal it. */
-    bool _take_local(size_t index, VoidFunction& task, bool steal);
+    bool _take_local(size_t index, QueuedTask& task, bool steal);
     /** @brief Run one claimed task and account for its completion. */
-    void _execute(VoidFunction task);
+    void _execute(QueuedTask task);
     /** @brief Drive one worker's task acquisition loop. */
     void _worker_loop(size_t index);
     /** @brief Account for completed scheduler activity. */

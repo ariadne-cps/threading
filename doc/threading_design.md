@@ -140,6 +140,43 @@ implementations such as `TaskGraph`, `ConcurrencyBudget`,
 unnecessary implementation exposure and repeated compilation. The public
 headers document ownership, lifetime and cancellation contracts.
 
+### Logging context is a task property
+
+A worker thread in `ThreadPool` is persistent, while a submitting
+caller's Logging scope depth changes dynamically. Merely inheriting the
+level when the worker is created causes incorrect verbosity filtering:
+a task run from inside a nested `LOGGING_SCOPE_CREATE` can produce
+additional output compared to the same work run serially.
+
+Each `QueuedTask` therefore captures the submitting thread's
+**current Logging level** at enqueue time (both regular `enqueue` and
+tracked `enqueue_ticket`). Immediately before executing a task,
+`ThreadPool` temporarily sets the executor thread's level to the
+captured value; a scope guard restores its previous level afterward.
+This applies equally to worker execution, work stealing, targeted
+ticket acquisition, cooperative helping, and nested groups. Restoration
+does not assume callbacks leave the level balanced, and holds if they
+throw. Thread-wide `verbosity`, theme, scheduler and thread display
+names are **not** copied or changed.
+
+The Logging API `try_current_level()` returns an optional scope
+level. When submission comes from an unregistered external thread,
+there is no safe level to inherit: the task carries no context and the
+executor retains its own level. This avoids dereferencing an absent
+thread registration. When an executor itself has no Logging registration,
+the context guard likewise performs no level adjustment. The
+pre-existing rule that output-generating threads should be registered
+with Logging remains unchanged; this mechanism is not a substitute
+for registration.
+
+Tests cover worker reuse, submission from nested scopes, deferred
+execution after the submitting scope has exited, deliberately
+unbalanced callbacks, exceptions, recursive single-worker task groups,
+zero-worker targeted ticket helping and unregistered external
+submitters. Logging also tests its optional-level API on registered
+and unregistered threads. This changes only filtering/indentation
+context, not the scheduling policy or execution order.
+
 ### Workload boundaries
 
 BDD-oriented recursion benefits from sufficiently coarse fork thresholds
