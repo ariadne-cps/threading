@@ -15,11 +15,11 @@
  */
 
 #include "logging/logging.hpp"
+#include "logging/test_runner.hpp"
 #include "threading/thread_manager.hpp"
 #include "threading/threading_command_line_interface.hpp"
 
 #include "ariadne-testing.hpp"
-#include "logging/test_runner.hpp"
 
 using namespace Ariadne;
 

@@ -15,11 +15,11 @@
 #include <thread>
 #include <vector>
 
+#include "logging/test_runner.hpp"
 #include "threading/task_group.hpp"
 #include "threading/thread_pool.hpp"
 
 #include "ariadne-testing.hpp"
-#include "logging/test_runner.hpp"
 
 using namespace Ariadne;
 using namespace std::chrono_literals;

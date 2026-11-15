@@ -11,8 +11,9 @@
 // The umbrella must be a self-contained first include.
 #include <type_traits>
 
-#include "ariadne-testing.hpp"
 #include "logging/test_runner.hpp"
+
+#include "ariadne-testing.hpp"
 #include "ariadne-threading.hpp"
 
 using namespace Ariadne;

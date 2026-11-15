@@ -25,10 +25,10 @@
 #include <chrono>
 #include <thread>
 
+#include "logging/test_runner.hpp"
 #include "threading/thread_manager.hpp"
 
 #include "ariadne-testing.hpp"
-#include "logging/test_runner.hpp"
 
 using namespace Ariadne;
 using namespace std::chrono_literals;

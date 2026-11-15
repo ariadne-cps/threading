@@ -26,13 +26,13 @@
 #include <future>
 
 #include "logging/logging.hpp"
+#include "logging/test_runner.hpp"
 #include "logging/thread_registry_interface.hpp"
 #include "threading/thread.hpp"
 #include "threading/using.hpp"
 #include "utility/container.hpp"
 
 #include "ariadne-testing.hpp"
-#include "logging/test_runner.hpp"
 
 using namespace Ariadne;
 

@@ -6,8 +6,9 @@
 #include <thread>
 #include <vector>
 
-#include "ariadne-testing.hpp"
 #include "logging/test_runner.hpp"
+
+#include "ariadne-testing.hpp"
 #include "ariadne-threading.hpp"
 
 using namespace Ariadne;

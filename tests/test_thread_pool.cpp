@@ -27,12 +27,12 @@
 #include <stdexcept>
 
 #include "logging/logging.hpp"
+#include "logging/test_runner.hpp"
 #include "logging/thread_registry_interface.hpp"
 #include "threading/task_group.hpp"
 #include "threading/thread_pool.hpp"
 
 #include "ariadne-testing.hpp"
-#include "logging/test_runner.hpp"
 
 using namespace Ariadne;
 

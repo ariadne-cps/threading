@@ -25,10 +25,10 @@
 #include <thread>
 #include <vector>
 
+#include "logging/test_runner.hpp"
 #include "threading/workload_advancement.hpp"
 
 #include "ariadne-testing.hpp"
-#include "logging/test_runner.hpp"
 
 using namespace Ariadne;
 

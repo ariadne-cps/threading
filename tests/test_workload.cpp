@@ -25,11 +25,11 @@
 #include <chrono>
 #include <functional>
 
+#include "logging/test_runner.hpp"
 #include "threading/workload.hpp"
 #include "utility/container.hpp"
 
 #include "ariadne-testing.hpp"
-#include "logging/test_runner.hpp"
 
 using namespace Ariadne;
 
