@@ -3,6 +3,7 @@
 #include <vector>
 
 #include "ariadne-testing.hpp"
+#include "logging/test_runner.hpp"
 #include "ariadne-threading.hpp"
 
 using namespace Ariadne;
@@ -102,5 +103,5 @@ int main(int argc, char** argv) {
     ARIADNE_TESTING_ADD_TEST(TestObservation, test_snapshot_transitions);
     ARIADNE_TESTING_ADD_TEST(TestObservation, test_concurrent_snapshot_consistency);
     ARIADNE_TESTING_ADD_TEST(TestObservation, test_static_and_dynamic_observable);
-    return ARIADNE_TESTING_RUN_TESTS_WITH_ARGS(argc, argv);
+    return Ariadne::Testing::run_logging_suite(ariadne_test_suite, argc, argv);
 }

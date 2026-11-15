@@ -19,6 +19,7 @@
 #include "threading/thread_pool.hpp"
 
 #include "ariadne-testing.hpp"
+#include "logging/test_runner.hpp"
 
 using namespace Ariadne;
 using namespace std::chrono_literals;
@@ -370,5 +371,5 @@ int main(int argc, char** argv) {
     ARIADNE_TESTING_ADD_TEST(TestWorkStealingPolicy, test_destructor_drains);
     ARIADNE_TESTING_ADD_TEST(TestWorkStealingPolicy, test_zero_worker_destructor_drains_descendants);
     ARIADNE_TESTING_ADD_TEST(TestWorkStealingPolicy, test_local_helping_while_joining);
-    return ARIADNE_TESTING_RUN_TESTS_WITH_ARGS(argc, argv);
+    return Ariadne::Testing::run_logging_suite(ariadne_test_suite, argc, argv);
 }

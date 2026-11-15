@@ -30,6 +30,7 @@
 #include "utility/container.hpp"
 
 #include "ariadne-testing.hpp"
+#include "logging/test_runner.hpp"
 
 using namespace Ariadne;
 
@@ -189,5 +190,5 @@ int main(int argc, char** argv) {
     ARIADNE_TESTING_ADD_TEST(TestBufferedThread, test_task_arguments);
     ARIADNE_TESTING_ADD_TEST(TestBufferedThread, test_multiple_tasks);
     ARIADNE_TESTING_ADD_TEST(TestBufferedThread, test_atomic_multiple_threads);
-    return ARIADNE_TESTING_RUN_TESTS_WITH_ARGS(argc, argv);
+    return Ariadne::Testing::run_logging_suite(ariadne_test_suite, argc, argv);
 }

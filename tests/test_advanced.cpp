@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "ariadne-testing.hpp"
+#include "logging/test_runner.hpp"
 #include "ariadne-threading.hpp"
 
 using namespace Ariadne;
@@ -335,5 +336,5 @@ int main(int argc, char** argv) {
     ARIADNE_TESTING_ADD_TEST(TestAdvanced, test_graph_stop_before_run_and_resume);
     ARIADNE_TESTING_ADD_TEST(TestAdvanced, test_graph_stop_from_node);
     ARIADNE_TESTING_ADD_TEST(TestAdvanced, test_graph_with_shared_spawn_budget);
-    return ARIADNE_TESTING_RUN_TESTS_WITH_ARGS(argc, argv);
+    return Ariadne::Testing::run_logging_suite(ariadne_test_suite, argc, argv);
 }

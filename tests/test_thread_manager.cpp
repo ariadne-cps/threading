@@ -28,6 +28,7 @@
 #include "threading/thread_manager.hpp"
 
 #include "ariadne-testing.hpp"
+#include "logging/test_runner.hpp"
 
 using namespace Ariadne;
 using namespace std::chrono_literals;
@@ -226,5 +227,5 @@ int main(int argc, char** argv) {
     ARIADNE_TESTING_ADD_TEST(TestThreadManager, test_worker_cannot_shrink_manager);
     ARIADNE_TESTING_ADD_TEST(TestThreadManager, test_cooperative_manager_task_acquisition);
     ARIADNE_TESTING_ADD_TEST(TestThreadManager, test_change_concurrency_and_log_scheduler);
-    return ARIADNE_TESTING_RUN_TESTS_WITH_ARGS(argc, argv);
+    return Ariadne::Testing::run_logging_suite(ariadne_test_suite, argc, argv);
 }

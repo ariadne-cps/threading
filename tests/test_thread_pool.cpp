@@ -32,6 +32,7 @@
 #include "threading/thread_pool.hpp"
 
 #include "ariadne-testing.hpp"
+#include "logging/test_runner.hpp"
 
 using namespace Ariadne;
 
@@ -471,5 +472,5 @@ int main(int argc, char** argv) {
     ARIADNE_TESTING_ADD_TEST(TestSmartThreadPool, test_set_num_threads_to_zero_dynamically);
     ARIADNE_TESTING_ADD_TEST(TestSmartThreadPool, test_enqueue_to_stopping_pool_throws);
     ARIADNE_TESTING_ADD_TEST(TestSmartThreadPool, test_shrink_drains_queued_work);
-    return ARIADNE_TESTING_RUN_TESTS_WITH_ARGS(argc, argv);
+    return Ariadne::Testing::run_logging_suite(ariadne_test_suite, argc, argv);
 }

@@ -28,6 +28,7 @@
 #include "threading/workload_advancement.hpp"
 
 #include "ariadne-testing.hpp"
+#include "logging/test_runner.hpp"
 
 using namespace Ariadne;
 
@@ -119,5 +120,5 @@ int main(int argc, char** argv) {
     ARIADNE_TESTING_ADD_TEST(TestWorkloadAdvancement, test_finished);
     ARIADNE_TESTING_ADD_TEST(TestWorkloadAdvancement, test_concurrent_transitions);
     ARIADNE_TESTING_ADD_TEST(TestWorkloadAdvancement, test_invalid_transitions);
-    return ARIADNE_TESTING_RUN_TESTS_WITH_ARGS(argc, argv);
+    return Ariadne::Testing::run_logging_suite(ariadne_test_suite, argc, argv);
 }
